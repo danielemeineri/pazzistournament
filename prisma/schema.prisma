@@ -1,0 +1,385 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Torneo {
+  id            Int      @id @default(autoincrement())
+  nome          String
+  tipo          String
+  anno          Int
+  squadre       Int
+  formula       String
+  andataRitorno Boolean
+  creatoIl      DateTime @default(now())
+  logo String?
+
+  // Manteniamo questo campo per compatibilità
+  // con i tornei già esistenti.
+  videogioco String?
+
+  // Nuovo collegamento strutturato al videogioco.
+  videogiocoId Int?
+  gioco        Videogioco? @relation(fields: [videogiocoId], references: [id], onDelete: SetNull)
+
+  calciatori     CalciatoreTorneo[]
+  gironi         Girone[]
+  partecipazioni Partecipazione[]
+  partite        Partita[]
+  trofei         Trofeo[]
+  foto           FotoTorneo[]
+}
+
+model Videogioco {
+  id       Int      @id @default(autoincrement())
+  nome     String
+  anno     Int?
+  creatoIl DateTime @default(now())
+
+  tornei             Torneo[]
+  valutazioniSquadre ValutazioneSquadraGioco[]
+
+  @@unique([nome])
+}
+
+model ValutazioneSquadraGioco {
+  id           Int @id @default(autoincrement())
+  videogiocoId Int
+  squadraId    Int
+  valutazione  Int
+
+  videogioco Videogioco @relation(fields: [videogiocoId], references: [id], onDelete: Cascade)
+  squadra    Squadra    @relation(fields: [squadraId], references: [id], onDelete: Cascade)
+
+  @@unique([videogiocoId, squadraId])
+}
+
+model Squadra {
+  id       Int      @id @default(autoincrement())
+  nome     String
+  nazione  String?
+  stemma   String?
+  bandiera String?
+  creataIl DateTime @default(now())
+  tipo     String
+
+  calciatori      CalciatoreTorneo[]
+  cartelliniRossi CartellinoRosso[]
+  gol             Gol[]
+  partecipazioni  Partecipazione[]
+  partiteCasa     Partita[]          @relation("Partita_SquadraCasaIdToSquadra")
+  partiteOspite   Partita[]          @relation("Partita_SquadraOspiteIdToSquadra")
+  trofeiVinti     Trofeo[]           @relation("Trofeo_SquadraVincitrice")
+
+  valutazioniGiochi ValutazioneSquadraGioco[]
+
+  // Ranking PazziTournament
+  ranking RankingSquadra[]
+}
+
+model Partecipante {
+  id       Int      @id @default(autoincrement())
+  nome     String   @unique
+  creatoIl DateTime @default(now())
+  qrToken String? @unique
+  sostituzioniCasa   Partita[]          @relation("Partita_SostitutoCasa")
+  sostituzioniOspite Partita[]          @relation("Partita_SostitutoOspite")
+  rankingAllenatore  RankingAllenatore?
+
+  partecipazioni Partecipazione[]
+  trofeiVinti Trofeo[] @relation("Trofeo_PartecipanteVincitore")
+
+  // Profilo utente associato.
+  profilo Profilo?
+}
+
+model Partecipazione {
+  id             Int  @id @default(autoincrement())
+  torneoId       Int
+  squadraId      Int
+  partecipanteId Int?
+  gironeId       Int?
+
+  girone       Girone?       @relation(fields: [gironeId], references: [id])
+  partecipante Partecipante? @relation(fields: [partecipanteId], references: [id], onDelete: Cascade)
+  squadra      Squadra       @relation(fields: [squadraId], references: [id], onDelete: Cascade)
+  torneo       Torneo        @relation(fields: [torneoId], references: [id], onDelete: Cascade)
+
+  @@unique([torneoId, squadraId])
+}
+
+model Girone {
+  id       Int    @id @default(autoincrement())
+  nome     String
+  torneoId Int
+
+  torneo         Torneo           @relation(fields: [torneoId], references: [id], onDelete: Cascade)
+  partecipazioni Partecipazione[]
+  partite        Partita[]
+
+  @@unique([torneoId, nome])
+}
+
+model Partita {
+  id              BigInt    @id @default(autoincrement())
+  TorneoId        Int
+  SquadraCasaId   Int?
+  SquadraOspiteId Int?
+  dataPartita     DateTime? @db.Date
+  OraPartita      DateTime? @db.Time(6)
+  Fase            String?
+  GolCasa         Int?
+  GolOspite       Int?
+  Completata      Boolean?  @default(false)
+  NumeroGara      Int       @default(1)
+  giornata        Int?
+  gironeId        Int?
+  AiRigori        Boolean   @default(false)
+  RigoriCasa      Int?
+  RigoriOspite    Int?
+
+  cartelliniRossi CartellinoRosso[]
+  gol             Gol[]
+
+  squadraCasa   Squadra? @relation("Partita_SquadraCasaIdToSquadra", fields: [SquadraCasaId], references: [id])
+  squadraOspite Squadra? @relation("Partita_SquadraOspiteIdToSquadra", fields: [SquadraOspiteId], references: [id])
+  torneo        Torneo   @relation(fields: [TorneoId], references: [id], onDelete: Cascade)
+  girone        Girone?  @relation(fields: [gironeId], references: [id])
+
+  sostitutoCasaId   Int?
+  sostitutoOspiteId Int?
+
+  sostitutoCasa   Partecipante? @relation("Partita_SostitutoCasa", fields: [sostitutoCasaId], references: [id], onDelete: SetNull)
+  sostitutoOspite Partecipante? @relation("Partita_SostitutoOspite", fields: [sostitutoOspiteId], references: [id], onDelete: SetNull)
+
+  storicoRankingAllenatori StoricoRankingAllenatore[]
+
+  // Storico dei cambiamenti del ranking generati da questa partita
+  storicoRanking StoricoRankingSquadra[]
+}
+
+model Calciatore {
+  id             Int                @id @default(autoincrement())
+  nome           String             @unique
+  creatoIl       DateTime           @default(now())
+  partecipazioni CalciatoreTorneo[]
+}
+
+model CalciatoreTorneo {
+  id           Int @id @default(autoincrement())
+  calciatoreId Int
+  torneoId     Int
+  squadraId    Int
+
+  calciatore Calciatore @relation(fields: [calciatoreId], references: [id], onDelete: Cascade)
+  squadra    Squadra    @relation(fields: [squadraId], references: [id], onDelete: Cascade)
+  torneo     Torneo     @relation(fields: [torneoId], references: [id], onDelete: Cascade)
+
+  cartelliniRossi CartellinoRosso[]
+  gol             Gol[]
+  trofeiVinti     Trofeo[] @relation("Trofeo_CalciatoreVincitore")
+  trofeiVintiExAequo TrofeoCalciatoreVincitore[] @relation("TrofeoCalciatoreVincitore_CalciatoreTorneo")
+
+  @@unique([calciatoreId, torneoId, squadraId])
+}
+
+model Gol {
+  id                 Int           @id @default(autoincrement())
+  partitaId          BigInt
+  squadraId          Int
+  minuto             Int
+  tipo               TipoGol       @default(NORMALE)
+  calciatoreTorneoId Int
+  periodo            TempoPartita  @default(ST)
+  recupero           Int?          @default(0)
+  periodo_temp       TempoPartita?
+
+  calciatoreTorneo CalciatoreTorneo @relation(fields: [calciatoreTorneoId], references: [id], onDelete: Cascade)
+  partita          Partita          @relation(fields: [partitaId], references: [id], onDelete: Cascade)
+  squadra          Squadra          @relation(fields: [squadraId], references: [id], onDelete: Cascade)
+}
+
+model CartellinoRosso {
+  id                 Int    @id @default(autoincrement())
+  partitaId          BigInt
+  calciatoreTorneoId Int?
+  squadraId          Int
+  minuto             Int?
+
+  calciatoreTorneo CalciatoreTorneo? @relation(fields: [calciatoreTorneoId], references: [id], onDelete: Cascade)
+  partita          Partita           @relation(fields: [partitaId], references: [id], onDelete: Cascade)
+  squadra          Squadra           @relation(fields: [squadraId], references: [id], onDelete: Cascade)
+}
+
+model Profilo {
+  id         Int      @id @default(autoincrement())
+  supabaseId String   @unique
+  nome       String
+  ruolo      Ruolo    @default(USER)
+  creatoIl   DateTime @default(now())
+
+  // Partecipante PazziTournament associato all'account.
+  partecipanteId Int?          @unique
+  partecipante   Partecipante? @relation(fields: [partecipanteId], references: [id], onDelete: SetNull)
+}
+
+model Trofeo {
+  id                    Int        @id @default(autoincrement())
+  torneoId              Int
+  tipo                  TipoTrofeo
+  valore                Int?
+  nota                  String?
+  squadraVincitriceId   Int?
+  calciatoreVincitoreId Int?
+  partecipanteVincitoreId Int?
+
+  torneo              Torneo            @relation(fields: [torneoId], references: [id], onDelete: Cascade)
+  squadraVincitrice   Squadra?          @relation("Trofeo_SquadraVincitrice", fields: [squadraVincitriceId], references: [id], onDelete: SetNull)
+  calciatoreVincitore CalciatoreTorneo? @relation("Trofeo_CalciatoreVincitore", fields: [calciatoreVincitoreId], references: [id], onDelete: SetNull)
+  partecipanteVincitore Partecipante? @relation("Trofeo_PartecipanteVincitore", fields: [partecipanteVincitoreId], references: [id], onDelete: SetNull)
+
+  calciatoriVincitori TrofeoCalciatoreVincitore[]
+
+  @@unique([torneoId, tipo])
+  @@index([partecipanteVincitoreId])
+}
+
+model TrofeoCalciatoreVincitore {
+  id                 Int @id @default(autoincrement())
+  trofeoId           Int
+  calciatoreTorneoId Int
+
+  trofeo             Trofeo            @relation(fields: [trofeoId], references: [id], onDelete: Cascade)
+  calciatoreTorneo CalciatoreTorneo @relation("TrofeoCalciatoreVincitore_CalciatoreTorneo", fields: [calciatoreTorneoId], references: [id], onDelete: Cascade)
+
+  @@unique([trofeoId, calciatoreTorneoId])
+  @@index([calciatoreTorneoId])
+}
+
+// =========================================================
+// RANKING PAZZITOURNAMENT
+// =========================================================
+
+enum TipoRanking {
+  NAZIONALE
+  CLUB
+  MISTO
+}
+
+model RankingSquadra {
+  id           Int         @id @default(autoincrement())
+  squadraId    Int
+  tipo         TipoRanking
+  rating       Int         @default(0)
+  aggiornatoIl DateTime    @updatedAt
+
+  squadra Squadra                 @relation(fields: [squadraId], references: [id], onDelete: Cascade)
+  storico StoricoRankingSquadra[]
+
+  @@unique([squadraId, tipo])
+  @@index([tipo, rating])
+}
+
+model StoricoRankingSquadra {
+  id               Int    @id @default(autoincrement())
+  rankingSquadraId Int
+  partitaId        BigInt
+
+  ratingPrima Int
+  variazione  Int
+  ratingDopo  Int
+
+  fase      String?
+  risultato String
+
+  creatoIl DateTime @default(now())
+
+  rankingSquadra RankingSquadra @relation(fields: [rankingSquadraId], references: [id], onDelete: Cascade)
+  partita        Partita        @relation(fields: [partitaId], references: [id], onDelete: Cascade)
+
+  @@unique([rankingSquadraId, partitaId])
+  @@index([partitaId])
+}
+model RankingAllenatore {
+  id             Int      @id @default(autoincrement())
+  partecipanteId Int      @unique
+  punti          Int      @default(0)
+  aggiornatoIl   DateTime @updatedAt
+
+  partecipante Partecipante               @relation(fields: [partecipanteId], references: [id], onDelete: Cascade)
+  storico      StoricoRankingAllenatore[]
+
+  @@index([punti])
+}
+
+model StoricoRankingAllenatore {
+  id                Int      @id @default(autoincrement())
+  rankingAllenatoreId Int
+  partitaId         BigInt
+  puntiPrima        Int
+  variazione        Int
+  puntiDopo         Int
+  ruolo             String
+  fase              String?
+  risultato         String
+  creatoIl          DateTime @default(now())
+
+  rankingAllenatore RankingAllenatore @relation(fields: [rankingAllenatoreId], references: [id], onDelete: Cascade)
+  partita           Partita           @relation(fields: [partitaId], references: [id], onDelete: Cascade)
+
+  @@unique([rankingAllenatoreId, partitaId, ruolo])
+  @@index([partitaId])
+}
+
+
+model FotoTorneo {
+  id         Int      @id @default(autoincrement())
+  torneoId   Int
+  percorso   String
+  didascalia String?
+  creatoIl   DateTime @default(now())
+
+  torneo Torneo @relation(fields: [torneoId], references: [id], onDelete: Cascade)
+
+  @@index([torneoId, creatoIl])
+}
+
+
+enum TipoTrofeo {
+  VINCITORE_TORNEO
+  MIGLIOR_MARCATORE
+  MIGLIOR_ASSISTMAN
+  MIGLIOR_PORTIERE
+  MVP
+  SQUADRA_SORPRESA
+  MIGLIOR_MOMENTO
+}
+
+enum TipoGol {
+  NORMALE
+  RIGORE
+  AUTOGOL
+}
+
+enum Ruolo {
+  ADMIN
+  USER
+}
+
+enum TempoPartita {
+  PT
+  ST
+  SUPPLEMENTARI
+  PRIMO_TEMPO
+  SECONDO_TEMPO
+}
+
+enum PeriodoPartita {
+  PT
+  ST
+  PTS
+  STS
+}
