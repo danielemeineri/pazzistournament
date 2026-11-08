@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
@@ -4361,103 +4362,59 @@ export async function POST(request: Request) {
 
 
 
-    // Le domande globali non dipendono da login né da un partecipante.
-
-    if (
-
-      domanda &&
-
-      !eDomandaPersonaleSpecifiche(domanda) &&
-
-      eDomandaGlobale(domanda)
-
-    ) {
-
-      const risposta = await rispondiDomandaGlobale(domanda);
-
-
-
-      return NextResponse.json({
-
-        risposta,
-
-        autenticato: Boolean(user),
-
-        amministratore,
-
-        richiedeIdentita: false,
-
-        tipo: "globale",
-
-      });
-
-    }
-
-
-
-    // Prima scelta: partecipante nominato esplicitamente nella domanda.
-
-    let partecipante = domanda
-
-      ? await trovaPartecipanteNellaDomanda(prisma, domanda)
-
+    // Identità QR verificata sul server: stessa logica della homepage.
+    const cookieStore = await cookies();
+    const qrToken = cookieStore.get("pazzi_qr_token")?.value;
+    const partecipanteQR = qrToken && /^[a-f0-9]{64}$/i.test(qrToken)
+      ? await prisma.partecipante.findUnique({
+          where: { qrToken },
+          select: { id: true, nome: true },
+        })
       : null;
 
+    // Un nome esplicito nella domanda prevale sull'identità personale.
+    const partecipanteEsplicito = domanda
+      ? await trovaPartecipanteNellaDomanda(prisma, domanda)
+      : null;
 
-
-    // Seconda scelta: identità conservata dal client durante la chat.
-
-    // Il nome viene comunque verificato sul database.
-
-
-
-    if (!partecipante && nomeIdentita) {
-
-      partecipante = await trovaPartecipantePerNome(
-
-        prisma,
-
-        nomeIdentita
-
-      );
-
-    }
-
-
-
-    // Terza scelta: se non è stato nominato nessuno e non è stata
-
-    // conservata un'identità, usa il partecipante collegato alla sessione.
-
-    // Gli ospiti non devono autenticarsi.
-
-    if (!partecipante && user) {
-
-      const profilo = await prisma.profilo.findUnique({
-
-        where: { supabaseId: user.id },
-
-        select: { partecipanteId: true, nome: true },
-
+    // Le domande globali restano globali, salvo quelle personali o
+    // quelle che nominano espressamente un partecipante.
+    if (
+      domanda &&
+      !partecipanteEsplicito &&
+      !eDomandaPersonaleSpecifiche(domanda) &&
+      eDomandaGlobale(domanda)
+    ) {
+      const risposta = await rispondiDomandaGlobale(domanda);
+      return NextResponse.json({
+        risposta,
+        autenticato: Boolean(user),
+        amministratore,
+        richiedeIdentita: false,
+        tipo: "globale",
       });
-
-
-
-      if (profilo?.partecipanteId) {
-
-        partecipante = await prisma.partecipante.findUnique({
-
-          where: { id: profilo.partecipanteId },
-
-          select: { id: true, nome: true },
-
-        });
-
-      }
-
     }
 
+    // Priorità: nome esplicito > QR personale > profilo Supabase >
+    // identità conservata nella chat. Il client non può sovrascrivere
+    // l'identità personale riconosciuta tramite QR.
+    let partecipante = partecipanteEsplicito ?? partecipanteQR;
+    console.log("PAZZI IA - DIAGNOSTICA QR", {
+  cookiePresente: Boolean(qrToken),
+  cookieValido: Boolean(qrToken && /^[a-f0-9]{64}$/i.test(qrToken)),
+  partecipanteQR: partecipanteQR?.nome ?? null,
+  partecipanteEsplicito: partecipanteEsplicito?.nome ?? null,
+  partecipanteSelezionato: partecipante?.nome ?? null,
+});
 
+    if (!partecipante && profiloSessione?.partecipanteId) {
+      partecipante = await prisma.partecipante.findUnique({
+        where: { id: profiloSessione.partecipanteId },
+        select: { id: true, nome: true },
+      });
+    }
+
+    // Non usare nomi delle domande precedenti come identità personale.
 
     // Se non è stato specificato un partecipante e non esiste un profilo
 

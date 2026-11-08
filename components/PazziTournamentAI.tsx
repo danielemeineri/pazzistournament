@@ -40,10 +40,6 @@ export default function PazziTournamentAI() {
   const [caricamento, setCaricamento] = useState(false);
   const [messaggi, setMessaggi] = useState<Messaggio[]>([]);
 
-  // Identità mantenuta per tutta la durata della chat.
-  const [partecipanteAttivo, setPartecipanteAttivo] =
-    useState<Partecipante | null>(null);
-
   async function inviaDomanda(testoPersonalizzato?: string) {
     const testo = (testoPersonalizzato ?? domanda).trim();
 
@@ -74,9 +70,6 @@ export default function PazziTournamentAI() {
         body: JSON.stringify({
           domanda: testo,
 
-          // Inviamo al server il partecipante riconosciuto
-          // nelle domande precedenti della stessa chat.
-          nomeIdentita: partecipanteAttivo?.nome ?? null,
         }),
       });
 
@@ -102,12 +95,6 @@ export default function PazziTournamentAI() {
         throw new Error(
           "L'API non ha restituito una risposta."
         );
-      }
-
-      // Memorizziamo l'identità restituita dal server.
-      // Il server ha già verificato il partecipante nel database.
-      if (data.partecipante) {
-        setPartecipanteAttivo(data.partecipante);
       }
 
       const risposta: Messaggio = {
@@ -186,11 +173,7 @@ export default function PazziTournamentAI() {
                     Assistente statistico
                   </p>
 
-                  {partecipanteAttivo && (
-                    <p className="mt-1 text-[10px] text-slate-500">
-                      Partecipante: {partecipanteAttivo.nome}
-                    </p>
-                  )}
+
                 </div>
               </div>
 
