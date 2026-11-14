@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/auth";
 
 /**
  * ============================================================
@@ -786,10 +785,6 @@ export async function recuperaValutazioniSquadre(
 export async function aggiornaTrofeiAutomatici(
   torneoId: number
 ) {
-  await requireAdmin();
-  if (!Number.isSafeInteger(torneoId) || torneoId <= 0) {
-    throw new Error("ID torneo non valido.");
-  }
   const torneo =
     await prisma.torneo.findUnique({
       where: {
@@ -830,22 +825,6 @@ export async function aggiornaTrofeiAutomatici(
     throw new Error(
       "Torneo non trovato."
     );
-  }
-
-  // Quando una partita viene riaperta, cancelliamo solo i trofei automatici.
-  // I premi manuali restano intatti; gli ex aequo sono rimossi in cascata.
-  const torneoConcluso =
-    torneo.partite.length > 0 &&
-    torneo.partite.every((partita) => partita.Completata === true);
-
-  if (!torneoConcluso) {
-    await prisma.trofeo.deleteMany({
-      where: {
-        torneoId,
-        tipo: { in: ["VINCITORE_TORNEO", "MIGLIOR_MARCATORE", "SQUADRA_SORPRESA"] },
-      },
-    });
-    return { torneoConcluso: false };
   }
 
   /**
@@ -972,10 +951,9 @@ export async function aggiornaTrofeiAutomatici(
         nota: null,
       },
     });
-  } else {
-    await prisma.trofeo.deleteMany({ where: { torneoId, tipo: "VINCITORE_TORNEO" } });
   }
 
+ 
   /**
    * ==========================================================
    * 2. MIGLIOR MARCATORE — SUPPORTO EX AEQUO
@@ -1045,8 +1023,6 @@ export async function aggiornaTrofeiAutomatici(
         skipDuplicates: true,
       });
     });
-  } else {
-    await prisma.trofeo.deleteMany({ where: { torneoId, tipo: "MIGLIOR_MARCATORE" } });
   }
 
   /**
@@ -1122,8 +1098,6 @@ export async function aggiornaTrofeiAutomatici(
         nota,
       },
     });
-  } else {
-    await prisma.trofeo.deleteMany({ where: { torneoId, tipo: "SQUADRA_SORPRESA" } });
   }
 
   /**
