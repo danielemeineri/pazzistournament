@@ -18,6 +18,19 @@ function getOraItalia(): number {
   );
 }
 
+function getMinutiItalia(): number {
+  const parti = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Rome",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+
+  const ore = Number(parti.find((p) => p.type === "hour")?.value ?? 0);
+  const minuti = Number(parti.find((p) => p.type === "minute")?.value ?? 0);
+  return ore * 60 + minuti;
+}
+
 function getDataItalia(): Date {
   const parti = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Rome",
@@ -123,17 +136,16 @@ export default async function Home() {
 
       if (partecipazioniUniche.length > 0) {
         const oggi = getDataItalia();
-        const oraAttuale = getOraItalia();
-        const minutiAttuali =
-          oraAttuale * 60 + new Date().getMinutes();
+        const minutiAttuali = getMinutiItalia();
 
         const partite = await prisma.partita.findMany({
           where: {
             AND: [
               {
-                dataPartita: {
-                  gte: oggi,
-                },
+                OR: [
+                  { dataPartita: { gte: oggi } },
+                  { dataPartita: null },
+                ],
               },
               {
                 OR: partecipazioniUniche.map((p) => ({
@@ -175,11 +187,11 @@ export default async function Home() {
             { dataPartita: "asc" },
             { OraPartita: "asc" },
           ],
-          take: 30,
         });
 
         const partiteFuture = partite.filter((partita) => {
-          if (!partita.dataPartita) return false;
+          // Le partite senza data sono da programmare, non da escludere.
+          if (!partita.dataPartita) return true;
 
           const stessaGiornata =
             partita.dataPartita.toISOString().slice(0, 10) ===
@@ -196,7 +208,26 @@ export default async function Home() {
           return true;
         });
 
-        partecipante.prossimePartite = partiteFuture.map((partita) => {
+        // Prima le partite programmate, poi quelle ancora senza data.
+        // Il limite viene applicato dopo il filtro per non perdere partite valide.
+        partiteFuture.sort((a, b) => {
+          if (!a.dataPartita && !b.dataPartita) {
+            return Number(a.id > b.id) - Number(a.id < b.id);
+          }
+          if (!a.dataPartita) return 1;
+          if (!b.dataPartita) return -1;
+          const differenzaData = a.dataPartita.getTime() - b.dataPartita.getTime();
+          if (differenzaData !== 0) return differenzaData;
+          const minutiA = a.OraPartita
+            ? a.OraPartita.getUTCHours() * 60 + a.OraPartita.getUTCMinutes()
+            : -1;
+          const minutiB = b.OraPartita
+            ? b.OraPartita.getUTCHours() * 60 + b.OraPartita.getUTCMinutes()
+            : -1;
+          return minutiA - minutiB;
+        });
+
+        partecipante.prossimePartite = partiteFuture.slice(0, 30).map((partita) => {
           const squadraCasaId = partita.SquadraCasaId;
           const squadraOspiteId = partita.SquadraOspiteId;
 
@@ -222,8 +253,12 @@ export default async function Home() {
             squadraPartecipante: squadraPartecipante ?? "Squadra",
             avversario: avversario ?? "Avversario da definire",
             torneo: partita.torneo?.nome ?? "Torneo",
-            data: formattaData(partita.dataPartita!),
-            ora: formattaOra(partita.OraPartita),
+            data: partita.dataPartita
+              ? formattaData(partita.dataPartita)
+              : "Da programmare",
+            ora: partita.dataPartita
+              ? formattaOra(partita.OraPartita)
+              : "Orario da definire",
           };
         });
       }
