@@ -17,8 +17,8 @@ model Torneo {
   creatoIl      DateTime @default(now())
   logo          String?
 
-  // Manteniamo questo campo per compatibilità
-  // con i tornei già esistenti.
+  // Manteniamo questo campo per compatibilitÃ 
+  // con i tornei giÃ  esistenti.
   videogioco String?
 
   // Nuovo collegamento strutturato al videogioco.
@@ -108,7 +108,8 @@ model VisitaSito {
   id               String    @id @default(uuid()) @db.Uuid
   partecipanteId   Int
   iniziataIl       DateTime  @default(now())
-  ultimaAttivitaIl DateTime  @default(now())
+  ultimaAttivitaIl    DateTime  @default(now())
+  ultimaInterazioneIl DateTime  @default(now())
   terminataIl      DateTime?
   secondiAttivi    Int       @default(0)
   origine          String? // QR, LINK o SESSIONE; impostata dal server
@@ -118,6 +119,7 @@ model VisitaSito {
   @@index([partecipanteId, iniziataIl])
   @@index([iniziataIl])
   @@index([ultimaAttivitaIl])
+  @@index([ultimaInterazioneIl])
 }
 
 model Partecipazione {
@@ -169,7 +171,7 @@ model Partita {
   gol             Gol[]
 
   squadraCasa   Squadra? @relation("Partita_SquadraCasaIdToSquadra", fields: [SquadraCasaId], references: [id])
-  squadraOspite Squadra? @relation("Partita_SquadraOspiteIdToSquadra", fields: [SquadraOspiteId], references: [id])
+  squadraOspite Squadra? @relation("Partita_SquadraOspiteIdToSquadra", fields: [SquadraOspiteId],references: [id])
   torneo        Torneo   @relation(fields: [TorneoId], references: [id], onDelete: Cascade)
   girone        Girone?  @relation(fields: [gironeId], references: [id])
 
@@ -177,7 +179,7 @@ model Partita {
   sostitutoOspiteId Int?
 
   sostitutoCasa   Partecipante? @relation("Partita_SostitutoCasa", fields: [sostitutoCasaId], references: [id], onDelete: SetNull)
-  sostitutoOspite Partecipante? @relation("Partita_SostitutoOspite", fields: [sostitutoOspiteId], references: [id], onDelete: SetNull)
+  sostitutoOspite Partecipante? @relation("Partita_SostitutoOspite", fields: [sostitutoOspiteId],references: [id], onDelete: SetNull)
 
   storicoRankingAllenatori StoricoRankingAllenatore[]
 
@@ -204,8 +206,8 @@ model CalciatoreTorneo {
 
   cartelliniRossi    CartellinoRosso[]
   gol                Gol[]
-  trofeiVinti        Trofeo[]                    @relation("Trofeo_CalciatoreVincitore")
-  trofeiVintiExAequo TrofeoCalciatoreVincitore[] @relation("TrofeoCalciatoreVincitore_CalciatoreTorneo")
+  trofeiVinti        Trofeo[]@relation("Trofeo_CalciatoreVincitore")
+  trofeiVintiExAequo TrofeoCalciatoreVincitore[]@relation("TrofeoCalciatoreVincitore_CalciatoreTorneo")
 
   @@unique([calciatoreId, torneoId, squadraId])
 }
@@ -247,7 +249,7 @@ model Profilo {
 
   // Partecipante PazziTournament associato all'account.
   partecipanteId Int?          @unique
-  partecipante   Partecipante? @relation(fields: [partecipanteId], references: [id], onDelete: SetNull)
+  partecipante   Partecipante? @relation(fields:[partecipanteId], references: [id], onDelete: SetNull)
 }
 
 model Trofeo {
@@ -263,10 +265,9 @@ model Trofeo {
   torneo                Torneo            @relation(fields: [torneoId], references: [id], onDelete: Cascade)
   squadraVincitrice     Squadra?          @relation("Trofeo_SquadraVincitrice", fields: [squadraVincitriceId], references: [id], onDelete: SetNull)
   calciatoreVincitore   CalciatoreTorneo? @relation("Trofeo_CalciatoreVincitore", fields: [calciatoreVincitoreId], references: [id], onDelete: SetNull)
-  partecipanteVincitore Partecipante?     @relation("Trofeo_PartecipanteVincitore", fields: [partecipanteVincitoreId], references: [id], onDelete: SetNull)
+  partecipanteVincitore Partecipante?     @relation("Trofeo_PartecipanteVincitore", fields: [partecipanteVincitoreId], references: [id], onDelete:SetNull)
 
   calciatoriVincitori TrofeoCalciatoreVincitore[]
-
   @@unique([torneoId, tipo])
   @@index([partecipanteVincitoreId])
 }
@@ -321,7 +322,7 @@ model StoricoRankingSquadra {
 
   creatoIl DateTime @default(now())
 
-  rankingSquadra RankingSquadra @relation(fields: [rankingSquadraId], references: [id], onDelete: Cascade)
+  rankingSquadra RankingSquadra @relation(fields: [rankingSquadraId], references: [id], onDelete:Cascade)
   partita        Partita        @relation(fields: [partitaId], references: [id], onDelete: Cascade)
 
   @@unique([rankingSquadraId, partitaId])

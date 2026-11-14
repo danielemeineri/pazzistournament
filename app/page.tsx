@@ -1,7 +1,7 @@
 
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import { cookies } from "next/headers";
+import { getSessioneQR } from "@/lib/sessione-qr";
 import { prisma } from "@/lib/prisma";
 import ScrollReveal from "@/components/ScrollReveal";
 
@@ -213,8 +213,7 @@ export default async function Home() {
   const immagineTrofeoHero = anniversarioHero
     ? trofeiHome.find((t) => t.tipo.toLowerCase() === anniversarioHero.torneo.toLowerCase())?.immagine ?? null
     : null;
-  const cookieStore = await cookies();
-  const qrToken = cookieStore.get("pazzi_qr_token")?.value;
+  const sessioneQR = await getSessioneQR();
 
   let partecipante: {
     nome: string;
@@ -233,9 +232,9 @@ export default async function Home() {
   // RICONOSCIMENTO PARTECIPANTE TRAMITE QR
   // =====================================================
 
-  if (qrToken && /^[a-f0-9]{64}$/i.test(qrToken)) {
+  if (sessioneQR) {
     const datiPartecipante = await prisma.partecipante.findUnique({
-      where: { qrToken },
+      where: { id: sessioneQR.partecipante.id },
       select: {
         nome: true,
         partecipazioni: {
