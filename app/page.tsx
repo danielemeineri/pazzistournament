@@ -1212,6 +1212,17 @@ export default async function Home() {
                     <p className="mt-1 text-xs text-slate-400">
                       Il tuo prossimo appuntamento in campo ti aspetta.
                     </p>
+
+                    <form action="/api/qr/logout" method="post" className="mt-5">
+                      <button
+                        type="submit"
+                        className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#d9bd7b]/35 bg-[#d9bd7b]/10 px-4 py-2.5 text-[10px] font-black uppercase tracking-[.14em] text-[#ead29a] transition hover:border-[#ead29a]/70 hover:bg-[#d9bd7b]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ead29a]"
+                        aria-label={`Esci dal profilo di ${partecipante.nome}`}
+                      >
+                        <span aria-hidden="true">↪</span>
+                        Esci dal profilo
+                      </button>
+                    </form>
                   </div>
 
                   <div className="flex items-center gap-4 border-t border-[#d9bd7b]/15 pt-5 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
