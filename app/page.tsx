@@ -93,6 +93,7 @@ export default async function Home() {
     nome: string;
     prossimePartite: {
       id: string;
+      torneoId: number;
       squadraPartecipante: string;
       avversario: string;
       torneo: string;
@@ -250,6 +251,7 @@ export default async function Home() {
 
           return {
             id: String(partita.id),
+            torneoId: partita.TorneoId,
             squadraPartecipante: squadraPartecipante ?? "Squadra",
             avversario: avversario ?? "Avversario da definire",
             torneo: partita.torneo?.nome ?? "Torneo",
@@ -731,6 +733,14 @@ export default async function Home() {
           box-shadow: 0 25px 70px rgba(0,0,0,.2);
         }
 
+        .pt-qr-panel .pt-qr-match {
+          display: block !important;
+          pointer-events: auto !important;
+          cursor: pointer !important;
+          position: relative;
+          z-index: 101;
+        }
+
         .pt-qr-match {
           position: relative;
           overflow: hidden;
@@ -1170,15 +1180,15 @@ export default async function Home() {
           CONTENUTO
       ================================================= */}
 
-      <div className="relative mx-auto max-w-[1380px] px-5 pb-10 sm:px-8">
+      <div className="relative z-[5] mx-auto max-w-[1380px] px-5 pb-10 sm:px-8">
 
         {/* =================================================
             SALUTO QR
         ================================================= */}
 
         {partecipante && (
-          <ScrollReveal className="-mt-5 md:-mt-8">
-            <section className="pt-qr-panel p-6 md:p-10">
+          <div className="relative isolate z-[100] -mt-5 md:-mt-8">
+            <section className="pt-qr-panel relative isolate z-[100] p-6 md:p-10">
               <div className="pointer-events-none absolute -right-20 -top-24 h-80 w-80 rounded-full border border-[#d9bd7b]/10" />
               <div className="pointer-events-none absolute -right-10 -top-14 h-60 w-60 rounded-full border border-[#d9bd7b]/10" />
 
@@ -1243,7 +1253,8 @@ export default async function Home() {
                   ) : (
                     <div className="grid gap-3">
                       {partecipante.prossimePartite.map((partita) => (
-                        <div key={partita.id} className="pt-qr-match p-5 md:p-6">
+                        <form key={partita.id} action={`/tornei/${partita.torneoId}/partite/${partita.id}`} method="get" className="relative z-[101]">
+                          <button type="submit" className="pt-qr-match relative block w-full cursor-pointer p-5 text-left md:p-6 transition-transform duration-300 hover:-translate-y-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-300" aria-label={`Apri la partita ${partita.squadraPartecipante} contro ${partita.avversario}`}>
                           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                             <div className="min-w-0">
                               <p className="text-[9px] font-black uppercase tracking-[.2em] text-[#e4ca8c]">
@@ -1265,14 +1276,16 @@ export default async function Home() {
                               </span>
                             </div>
                           </div>
-                        </div>
+                          <span className="mt-3 inline-block text-xs font-bold text-[#e4ca8c]">Apri partita ↗</span>
+                          </button>
+                        </form>
                       ))}
                     </div>
                   )}
                 </div>
               </div>
             </section>
-          </ScrollReveal>
+          </div>
         )}
 
         {/* =================================================
