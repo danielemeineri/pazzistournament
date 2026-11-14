@@ -4281,6 +4281,22 @@ function eDomandaSoloIdentita(
 
 */
 
+// Domande sull'identità: non devono avviare l'analisi statistica.
+function eDomandaChiSono(domanda: string): boolean {
+  const testo = normalizzaTesto(domanda);
+  return [
+    "chi sono",
+    "chi sono io",
+    "sai chi sono",
+    "tu sai chi sono",
+    "come mi chiamo",
+    "qual e il mio nome",
+    "dimmi il mio nome",
+    "mi riconosci",
+    "sai come mi chiamo",
+  ].includes(testo);
+}
+
 export async function POST(request: Request) {
 
   try {
@@ -4371,6 +4387,38 @@ export async function POST(request: Request) {
           select: { id: true, nome: true },
         })
       : null;
+
+    // Risposta breve alle domande sull'identità, prima del motore statistico
+    // e prima dell'instradamento delle domande globali.
+    if (domanda && eDomandaChiSono(domanda)) {
+      let identita = partecipanteQR;
+
+      if (!identita && profiloSessione?.partecipanteId) {
+        identita = await prisma.partecipante.findUnique({
+          where: { id: profiloSessione.partecipanteId },
+          select: { id: true, nome: true },
+        });
+      }
+
+      if (!identita) {
+        return NextResponse.json({
+          risposta: "Non so ancora chi sei. Accedi con il tuo QR personale o con un account associato a un partecipante per farti riconoscere.",
+          autenticato: Boolean(user),
+          amministratore,
+          richiedeIdentita: false,
+          tipo: "chiarimento",
+        });
+      }
+
+      return NextResponse.json({
+        risposta: `Sei ${identita.nome}! ⚽🏆`,
+        autenticato: Boolean(user),
+        amministratore,
+        richiedeIdentita: false,
+        partecipante: identita,
+        tipo: "personale",
+      });
+    }
 
     // Un nome esplicito nella domanda prevale sull'identità personale.
     const partecipanteEsplicito = domanda
