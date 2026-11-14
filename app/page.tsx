@@ -1,5 +1,6 @@
 
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import ScrollReveal from "@/components/ScrollReveal";
@@ -85,7 +86,133 @@ const trofeiHome = [
   { tipo: "Coppa d'Asia", nome: "Coppa d'Asia", immagine: "/trofei/coppa-asia.png", etichetta: "La conquista asiatica" },
 ] as const;
 
+
+// =====================================================
+// PAZZI MEMORIES — RICORDI DA RISULTATI REALI
+// =====================================================
+
+type RicordoPazzi = {
+  id: string;
+  torneoId: number;
+  torneo: string;
+  data: string;
+  anniFa: number;
+  squadraCasa: string;
+  squadraOspite: string;
+  golCasa: number;
+  golOspite: number;
+  vincitore: string;
+  stemmaVincitore: string | null;
+  fase: string;
+  finale: boolean;
+  rigori: string | null;
+};
+
+function normalizzaFaseRicordo(fase: string | null): string {
+  return (fase ?? "").toLowerCase().normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "").trim();
+}
+
+async function caricaPazziMemories(): Promise<{
+  anniversari: RicordoPazzi[];
+  ricordiDelGiorno: RicordoPazzi[];
+}> {
+  const oggi = getDataItalia();
+  const annoCorrente = oggi.getUTCFullYear();
+  const meseCorrente = oggi.getUTCMonth();
+  const giornoCorrente = oggi.getUTCDate();
+
+  const partite = await prisma.partita.findMany({
+    where: {
+      Completata: true,
+      dataPartita: { lt: new Date(Date.UTC(annoCorrente, 0, 1)) },
+    },
+    select: {
+      id: true,
+      TorneoId: true,
+      dataPartita: true,
+      Fase: true,
+      GolCasa: true,
+      GolOspite: true,
+      AiRigori: true,
+      RigoriCasa: true,
+      RigoriOspite: true,
+      squadraCasa: { select: { nome: true, stemma: true } },
+      squadraOspite: { select: { nome: true, stemma: true } },
+      torneo: { select: { nome: true } },
+    },
+    orderBy: [{ dataPartita: "desc" }, { id: "desc" }],
+  });
+
+  const ricordi: (RicordoPazzi & { mese: number; giorno: number })[] = [];
+  for (const partita of partite) {
+    if (!partita.dataPartita || !partita.squadraCasa || !partita.squadraOspite) continue;
+    if (partita.GolCasa === null || partita.GolOspite === null) continue;
+
+    const faseNormalizzata = normalizzaFaseRicordo(partita.Fase);
+    const finale = faseNormalizzata === "finale" || faseNormalizzata === "final";
+    const vittoriaCasa = partita.GolCasa > partita.GolOspite ||
+      (partita.GolCasa === partita.GolOspite && partita.AiRigori === true &&
+       partita.RigoriCasa !== null && partita.RigoriOspite !== null &&
+       partita.RigoriCasa > partita.RigoriOspite);
+    const vittoriaOspite = partita.GolOspite > partita.GolCasa ||
+      (partita.GolCasa === partita.GolOspite && partita.AiRigori === true &&
+       partita.RigoriCasa !== null && partita.RigoriOspite !== null &&
+       partita.RigoriOspite > partita.RigoriCasa);
+    if (!vittoriaCasa && !vittoriaOspite) continue;
+
+    const data = partita.dataPartita;
+    ricordi.push({
+      id: String(partita.id),
+      torneoId: partita.TorneoId,
+      torneo: partita.torneo?.nome ?? "Torneo",
+      data: formattaData(data),
+      anniFa: annoCorrente - data.getUTCFullYear(),
+      mese: data.getUTCMonth(),
+      giorno: data.getUTCDate(),
+      squadraCasa: partita.squadraCasa.nome,
+      squadraOspite: partita.squadraOspite.nome,
+      golCasa: partita.GolCasa,
+      golOspite: partita.GolOspite,
+      vincitore: vittoriaCasa ? partita.squadraCasa.nome : partita.squadraOspite.nome,
+      stemmaVincitore: vittoriaCasa ? partita.squadraCasa.stemma : partita.squadraOspite.stemma,
+      fase: partita.Fase ?? "Partita",
+      finale,
+      rigori: partita.AiRigori === true && partita.RigoriCasa !== null &&
+        partita.RigoriOspite !== null
+        ? `${partita.RigoriCasa}-${partita.RigoriOspite} d.c.r.` : null,
+    });
+  }
+
+  // Le celebrazioni appaiono SOLO nell'esatto giorno/mese della finale vinta.
+  // Se coincidono più finali, vengono mostrate tutte.
+  const anniversari = ricordi.filter((r) =>
+    r.finale && r.mese === meseCorrente && r.giorno === giornoCorrente
+  );
+
+  // Anche le partite non finali devono essere accadute nello stesso
+  // giorno e mese di oggi, ma in un anno precedente.
+  // Le finali sono gia mostrate nella sezione celebrativa e non si duplicano.
+  const ricordiDelGiorno = ricordi.filter((r) =>
+    !r.finale && r.mese === meseCorrente && r.giorno === giornoCorrente
+  );
+
+  return { anniversari, ricordiDelGiorno };
+}
+
 export default async function Home() {
+  const { anniversari, ricordiDelGiorno } = await caricaPazziMemories();
+  // Se ci sono più anniversari, la hero privilegia quello mondiale.
+  // Tutte le altre finali restano comunque visibili nelle card sottostanti.
+  const anniversarioHero =
+    anniversari.find((r) => /mondiale|world cup|world championship/i.test(r.torneo)) ??
+    anniversari[0] ?? null;
+  const mondialeHero = anniversarioHero
+    ? /mondiale|world cup|world championship/i.test(anniversarioHero.torneo)
+    : false;
+  const immagineTrofeoHero = anniversarioHero
+    ? trofeiHome.find((t) => t.tipo.toLowerCase() === anniversarioHero.torneo.toLowerCase())?.immagine ?? null
+    : null;
   const cookieStore = await cookies();
   const qrToken = cookieStore.get("pazzi_qr_token")?.value;
 
@@ -272,7 +399,7 @@ export default async function Home() {
   // =====================================================
 
   return (
-    <main className="pt-home min-h-screen overflow-hidden">
+    <main className={`pt-home min-h-screen overflow-hidden ${anniversarioHero?.stemmaVincitore ? "pt-home-champions" : ""}`}>
 
       <style>{`
         .pt-home {
@@ -1077,6 +1204,80 @@ export default async function Home() {
           .pt-feature-card{min-height:270px}.pt-cinematic-caption{font-size:7px;letter-spacing:.18em}}
         @media(prefers-reduced-motion:reduce){.pt-film-track{animation:none}.pt-hero-orb,.pt-hero-glow,.pt-title-accent,
           .pt-honours-title,.pt-stadium-light{animation:none}}
+
+        /* COLORI DINAMICI: lo sfondo usa ESCLUSIVAMENTE i pixel dello stemma originale.
+           Nessuna palette inventata o stella aggiunta. La stessa immagine, molto
+           ingrandita e sfocata, crea le luci ambientali della squadra campione. */
+        .pt-home-champions { background:#060b14; }
+        .pt-home-champions .pt-hero { isolation:isolate; }
+        .pt-champions-color-field { position:absolute;inset:-12%;z-index:0;overflow:hidden;pointer-events:none; }
+        .pt-champions-color-source { position:absolute;inset:-18%;width:136%;height:136%;object-fit:cover;
+          opacity:.68;filter:blur(105px) saturate(1.9) brightness(.68);
+          transform:scale(1.2);animation:ptChampionColors 16s ease-in-out infinite alternate; }
+        .pt-champions-color-field::after { content:"";position:absolute;inset:0;
+          background:linear-gradient(180deg,rgba(3,8,19,.86) 0%,rgba(3,8,19,.36) 38%,rgba(3,8,19,.57) 72%,#060b14 100%),
+          radial-gradient(ellipse at 50% 45%,transparent 4%,rgba(3,8,19,.52) 75%); }
+        .pt-home-champions .pt-film-strip { background:linear-gradient(90deg,#060b14,rgba(26,35,53,.96),#060b14); }
+        .pt-home-champions .pt-topline { box-shadow:0 0 28px rgba(255,224,154,.2); }
+        .pt-home-champions .pt-hero-orb { opacity:.26; }
+        .pt-home-champions .pt-hero-glow { opacity:.18; }
+        .pt-home-champions .pt-stadium-light { opacity:.1; }
+        @keyframes ptChampionColors { from{transform:scale(1.18) translate(-2%,1%) rotate(-4deg)}to{transform:scale(1.38) translate(2%,-2%) rotate(4deg)} }
+        @media(max-width:640px){.pt-champions-color-source{filter:blur(65px) saturate(1.9) brightness(.68)}}
+        @media(prefers-reduced-motion:reduce){.pt-champions-color-source{animation:none}}
+
+        /* HALL OF CHAMPIONS — CERIMONIA CINEMATOGRAFICA */
+        .pt-champions { overflow:hidden; }
+        .pt-champions-stage { position:absolute;inset:0;z-index:0;overflow:hidden;pointer-events:none;isolation:isolate; }
+        .pt-champions-stage::before {content:"";position:absolute;inset:0;background:radial-gradient(ellipse at 50% 65%,transparent 5%,rgba(2,5,13,.55) 74%,#040711 100%);z-index:5;}
+        .pt-champions-stage::after {content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent 0px,transparent 3px,rgba(255,255,255,.012) 4px);z-index:7;opacity:.55;}
+        .pt-champions-stage-floor {position:absolute;left:-20%;right:-20%;bottom:-18%;height:49%;border-radius:50%;transform:perspective(650px) rotateX(67deg);background:radial-gradient(ellipse,rgba(234,190,99,.28) 0%,rgba(180,126,45,.12) 28%,transparent 70%);border-top:1px solid rgba(247,214,146,.26);box-shadow:0 -12px 110px rgba(216,164,75,.14);z-index:2;animation:ptStageRise 2s both;}
+        .pt-champions-beam {position:absolute;top:-38%;left:50%;width:24%;height:125%;transform-origin:50% 0%;background:linear-gradient(180deg,rgba(255,235,172,.32),rgba(245,203,111,.08) 55%,transparent);clip-path:polygon(48% 0,52% 0,100% 100%,0 100%);filter:blur(17px);mix-blend-mode:screen;opacity:.6;z-index:3;animation:ptBeamSweep 11s ease-in-out infinite alternate;}
+        .pt-champions-beam:nth-child(2){left:16%;animation-delay:-5s;animation-duration:13s;opacity:.42;}
+        .pt-champions-beam:nth-child(3){left:73%;animation-delay:-8s;animation-duration:15s;opacity:.42;}
+        .pt-champions-spot {position:absolute;top:7%;width:13px;height:13px;border-radius:50%;background:#fff6d4;box-shadow:0 0 24px 9px rgba(255,225,153,.75),0 0 100px 25px rgba(233,174,73,.45);z-index:4;animation:ptSpotPulse 4s ease-in-out infinite alternate;}
+        .pt-champions-spot.a{left:16%}.pt-champions-spot.b{right:16%;animation-delay:-2s}
+        .pt-champions-particles {position:absolute;inset:0;z-index:6;overflow:hidden;}
+        .pt-champions-particle {position:absolute;top:-12%;left:var(--particle-x);width:var(--particle-w);height:var(--particle-h);background:linear-gradient(135deg,#fff0bb,#c18d3e);opacity:0;transform:rotate(var(--particle-rot));animation:ptGoldFall var(--particle-duration) linear var(--particle-delay) infinite;box-shadow:0 0 8px rgba(255,214,136,.2);}
+        .pt-champions .pt-champions-crest {opacity:.53;width:min(86vw,790px);height:min(86vw,790px);filter:drop-shadow(20px 26px 10px rgba(0,0,0,.6)) drop-shadow(0 0 34px rgba(255,219,137,.4));animation:ptCrestReveal 2.4s cubic-bezier(.16,1,.3,1) both,ptChampionCrest 11s ease-in-out 2.4s infinite alternate;}
+        .pt-champions .pt-champions-crest-halo{animation:ptChampionHalo 6s ease-in-out infinite alternate;}
+        .pt-champions .pt-champions-crest-wrap{z-index:1;}
+        .pt-champions .pt-champions-color-field{opacity:.72;}
+        .pt-champions .pt-champions-trophy{z-index:4;opacity:.94;right:8%;bottom:12%;width:clamp(105px,18vw,240px);height:clamp(145px,26vw,320px);animation:ptTrophyReveal 2.1s 1s both,ptTrophyFloat 6s 3.1s ease-in-out infinite;filter:drop-shadow(0 22px 20px rgba(0,0,0,.65)) drop-shadow(0 0 26px rgba(255,203,107,.5));}
+        .pt-champions .pt-hero-content{position:relative;z-index:10;}
+        .pt-champions .pt-stadium{opacity:.34;}
+        .pt-champions .pt-hero-orb{opacity:.12;}
+        .pt-champions .pt-hero-glow{opacity:.25;}
+        .pt-champions .pt-title{text-shadow:0 5px 35px rgba(0,0,0,.9),0 0 70px rgba(230,180,75,.2);}
+        .pt-champions-kicker{animation:ptChampionLabel 1.1s .6s both;}
+        .pt-champions-result{transition:transform .3s,box-shadow .3s;}
+        .pt-champions-result:hover{transform:translateY(-4px);box-shadow:0 15px 55px rgba(225,181,91,.22);}
+        @keyframes ptBeamSweep{from{transform:translateX(-50%) rotate(-24deg)}to{transform:translateX(-50%) rotate(24deg)}}
+        @keyframes ptSpotPulse{from{opacity:.6;transform:scale(.7)}to{opacity:1;transform:scale(1.2)}}
+        @keyframes ptGoldFall{0%{transform:translate3d(0,-30px,0) rotate(var(--particle-rot));opacity:0}12%{opacity:.85}85%{opacity:.65}100%{transform:translate3d(var(--particle-drift),110vh,0) rotate(680deg);opacity:0}}
+        @keyframes ptCrestReveal{from{opacity:0;transform:perspective(1100px) translateY(90px) scale(.6) rotateY(-32deg);filter:blur(24px)}to{opacity:.53;transform:perspective(1100px) translateY(0) scale(1) rotateY(-9deg);filter:blur(0)}}
+        @keyframes ptTrophyReveal{from{opacity:0;transform:translateY(80px) scale(.7);filter:blur(15px)}to{opacity:.94;transform:translateY(0) scale(1);filter:blur(0)}}
+        @keyframes ptChampionLabel{from{opacity:0;transform:translateY(18px);letter-spacing:.35em}to{opacity:1;transform:translateY(0);letter-spacing:.16em}}
+        @keyframes ptStageRise{from{opacity:0;transform:perspective(650px) rotateX(67deg) scale(.6)}to{opacity:1;transform:perspective(650px) rotateX(67deg) scale(1)}}
+        @media(max-width:640px){.pt-champions .pt-champions-crest{width:115vw;height:115vw;opacity:.38}.pt-champions .pt-champions-trophy{right:-3%;bottom:13%;opacity:.65;width:115px;height:155px}.pt-champions-beam{width:40%;filter:blur(22px)}.pt-champions-stage-floor{bottom:-12%}.pt-champions .pt-hero-content{padding-top:115px;padding-bottom:105px}}
+        @media(prefers-reduced-motion:reduce){.pt-champions-beam,.pt-champions-spot,.pt-champions-particle,.pt-champions-stage-floor,.pt-champions .pt-champions-crest,.pt-champions .pt-champions-trophy,.pt-champions-kicker{animation:none!important}.pt-champions-particle{display:none}}
+
+        /* HALL OF CHAMPIONS — solo durante gli anniversari delle finali */
+        .pt-hero.pt-champions { background:radial-gradient(ellipse at 50% 50%,rgba(163,116,41,.09),transparent 57%),linear-gradient(180deg,#060b17,#111a2c 52%,#060b14); }
+        .pt-champions .pt-stadium-light { opacity:.22; }
+        .pt-champions-crest-wrap { position:absolute;inset:0;z-index:0;display:flex;align-items:center;justify-content:center;overflow:hidden;pointer-events:none; }
+        .pt-champions-crest-halo { position:absolute;width:min(92vw,850px);height:min(92vw,850px);border-radius:50%;background:radial-gradient(circle,rgba(230,191,105,.23),rgba(180,132,57,.07) 40%,transparent 68%);filter:blur(25px);animation:ptChampionHalo 7s ease-in-out infinite alternate; }
+        .pt-champions-crest { width:min(77vw,700px);height:min(77vw,700px);object-fit:contain;opacity:.26;filter:drop-shadow(18px 25px 6px rgba(0,0,0,.42)) drop-shadow(-9px -8px 18px rgba(238,196,105,.26));transform:perspective(1100px) rotateY(-9deg) rotateX(3deg);animation:ptChampionCrest 10s ease-in-out infinite alternate;mask-image:radial-gradient(ellipse,black 49%,rgba(0,0,0,.8) 66%,transparent 89%); }
+        .pt-champions-crest-glint { position:absolute;inset:0;background:linear-gradient(115deg,transparent 35%,rgba(255,231,168,.07) 49%,transparent 61%);animation:ptChampionShine 9s ease-in-out infinite; }
+        .pt-champions .pt-hero-content { text-shadow:0 4px 28px rgba(0,0,0,.6); }
+        .pt-champions-kicker { display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:10px 19px;border:1px solid rgba(245,211,142,.55);border-radius:999px;background:rgba(8,12,25,.75);box-shadow:0 0 38px rgba(230,187,95,.19);color:#ffe6a7;font-size:10px;font-weight:900;letter-spacing:.16em;text-transform:uppercase; }
+        .pt-champions-result { display:inline-block;max-width:100%;border:1px solid rgba(234,210,154,.38);border-radius:22px;background:rgba(4,9,20,.72);padding:15px 24px;box-shadow:0 12px 40px rgba(0,0,0,.3);backdrop-filter:blur(14px); }
+        .pt-champions-trophy { position:absolute;right:max(2%,calc((100vw - 1400px)/2));bottom:14%;width:clamp(90px,15vw,190px);height:clamp(125px,22vw,270px);object-fit:contain;opacity:.76;filter:drop-shadow(0 12px 25px rgba(215,170,75,.24));pointer-events:none;animation:ptTrophyFloat 6s ease-in-out infinite; }
+        @keyframes ptChampionCrest { from{transform:perspective(1100px) rotateY(-11deg) rotateX(3deg) translateY(14px) scale(.97)}to{transform:perspective(1100px) rotateY(9deg) rotateX(-2deg) translateY(-12px) scale(1.04)} }
+        @keyframes ptChampionHalo {from{opacity:.55;transform:scale(.94)}to{opacity:1;transform:scale(1.08)}}
+        @keyframes ptChampionShine {0%,30%{transform:translateX(-130%)}65%,100%{transform:translateX(130%)}}
+        @media(max-width:640px){.pt-champions-crest{width:112vw;height:112vw;opacity:.23}.pt-champions-trophy{right:1%;bottom:8%;opacity:.35}.pt-champions-kicker{font-size:8px;letter-spacing:.09em}}
+        @media(prefers-reduced-motion:reduce){.pt-champions-crest,.pt-champions-crest-halo,.pt-champions-crest-glint,.pt-champions-trophy{animation:none}}
       `}</style>
 
       <div className="pt-topline" />
@@ -1085,7 +1286,50 @@ export default async function Home() {
           HERO
       ================================================= */}
 
-      <section className="pt-hero flex items-center">
+      <section className={`pt-hero flex items-center ${anniversarioHero ? "pt-champions" : ""}`}>
+        {anniversarioHero && (
+          <div className="pt-champions-stage" aria-hidden="true">
+            <div className="pt-champions-beam" />
+            <div className="pt-champions-beam" />
+            <div className="pt-champions-beam" />
+            <div className="pt-champions-spot a" />
+            <div className="pt-champions-spot b" />
+            <div className="pt-champions-stage-floor" />
+            <div className="pt-champions-particles">
+              {Array.from({ length: 32 }, (_, i) => (
+                <span
+                  key={i}
+                  className="pt-champions-particle"
+                  style={{
+                    "--particle-x": `${(i * 37 + 11) % 100}%`,
+                    "--particle-w": `${3 + (i % 3) * 2}px`,
+                    "--particle-h": `${6 + (i % 4) * 3}px`,
+                    "--particle-rot": `${(i * 41) % 180}deg`,
+                    "--particle-duration": `${7 + (i % 5) * 1.3}s`,
+                    "--particle-delay": `${(i * 0.73) % 9}s`,
+                    "--particle-drift": `${(i % 2 === 0 ? 1 : -1) * (30 + (i * 17) % 110)}px`,
+                  } as CSSProperties}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+        {anniversarioHero?.stemmaVincitore && (
+          <div className="pt-champions-color-field" aria-hidden="true">
+            <img className="pt-champions-color-source" src={anniversarioHero.stemmaVincitore} alt="" />
+          </div>
+        )}
+        {anniversarioHero?.stemmaVincitore && (
+          <div className="pt-champions-crest-wrap" aria-hidden="true">
+            <div className="pt-champions-crest-halo" />
+            {/* Lo stemma è quello originale del database: nessuna stella aggiunta. */}
+            <img className="pt-champions-crest" src={anniversarioHero.stemmaVincitore} alt="" />
+            <div className="pt-champions-crest-glint" />
+          </div>
+        )}
+        {anniversarioHero && immagineTrofeoHero && (
+          <img className="pt-champions-trophy" src={immagineTrofeoHero} alt="" aria-hidden="true" />
+        )}
         <div className="pt-stadium" aria-hidden="true">
           <div className="pt-stadium-light" />
           <div className="pt-stadium-light" />
@@ -1097,6 +1341,13 @@ export default async function Home() {
 
         <div className="pt-hero-content mx-auto w-full max-w-[1450px] px-5 pb-24 pt-24 text-center sm:px-8 md:pb-32 md:pt-32">
 
+          {anniversarioHero && (
+            <div className="pt-enter mb-8">
+              <span className="pt-champions-kicker">
+                ✦ PAZZI MEMORIES · {mondialeHero ? "CAMPIONI DEL MONDO" : "HALL OF CHAMPIONS"} ✦
+              </span>
+            </div>
+          )}
           <div className="pt-enter">
             <div className="pt-kicker mx-auto mb-9">
               <span className="pt-kicker-dot" />
@@ -1116,6 +1367,19 @@ export default async function Home() {
             </h1>
           </div>
 
+          {anniversarioHero && (
+            <div className="pt-enter pt-delay-2 mt-8">
+              <p className="text-xs font-black uppercase tracking-[.25em] text-[#ffe6a7]">
+                {anniversarioHero.anniFa} {anniversarioHero.anniFa === 1 ? "anno fa" : "anni fa"} · {anniversarioHero.torneo}
+              </p>
+              <h2 className="mt-3 text-2xl font-black text-[#fff0c7] md:text-4xl">{anniversarioHero.vincitore}</h2>
+              <Link href={`/tornei/${anniversarioHero.torneoId}/partite/${anniversarioHero.id}`} className="pt-champions-result mt-5 text-sm font-black text-white transition hover:border-[#fff0c7] md:text-lg">
+                {anniversarioHero.squadraCasa} {anniversarioHero.golCasa} – {anniversarioHero.golOspite} {anniversarioHero.squadraOspite}
+                {anniversarioHero.rigori && <span className="mt-1 block text-xs text-[#ead29a]">Rigori: {anniversarioHero.rigori}</span>}
+                <span className="mt-2 block text-[10px] uppercase tracking-[.18em] text-[#ead29a]">Rivivi la finale ↗</span>
+              </Link>
+            </div>
+          )}
           <div className="pt-hero-rule pt-enter pt-delay-2" />
 
           <div className="pt-enter pt-delay-2 mt-8">
@@ -1297,6 +1561,54 @@ export default async function Home() {
               </div>
             </section>
           </div>
+        )}
+
+
+        {/* =================================================
+            PAZZI MEMORIES — ANNIVERSARI E RICORDI
+        ================================================= */}
+        {anniversari.length > 0 && (
+          <section className="relative isolate -mt-5 mb-12 overflow-hidden rounded-[30px] border border-[#ead29a]/50 bg-gradient-to-br from-[#3c301b] via-[#16243d] to-[#080f20] p-7 shadow-[0_25px_90px_rgba(0,0,0,.45)] md:p-12" aria-label="Pazzi Memories: anniversari storici">
+            <div className="pointer-events-none absolute -right-24 -top-28 h-96 w-96 rounded-full bg-[#d9bd7b]/15 blur-[80px]" />
+            <div className="relative">
+              <p className="text-[10px] font-black uppercase tracking-[.32em] text-[#ead29a]">✦ Pazzi Memories · Oggi nella storia</p>
+              <h2 className="mt-4 text-3xl font-black tracking-tight text-[#fff1cb] md:text-6xl">La leggenda ritorna.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300">In questo giorno, negli anni passati, si scriveva una pagina della nostra storia.</p>
+              <div className="mt-8 grid gap-4 lg:grid-cols-2">
+                {anniversari.map((ricordo) => (
+                  <Link key={ricordo.id} href={`/tornei/${ricordo.torneoId}/partite/${ricordo.id}`} className="group relative block rounded-2xl border border-[#ead29a]/25 bg-black/25 p-6 transition hover:-translate-y-1 hover:border-[#ead29a]/70 hover:bg-black/35">
+                    <p className="text-[10px] font-black uppercase tracking-[.2em] text-[#ead29a]">🏆 {ricordo.anniFa} {ricordo.anniFa === 1 ? "anno fa" : "anni fa"} · Finale vinta</p>
+                    <h3 className="mt-3 text-2xl font-black text-white">{ricordo.vincitore}</h3>
+                    <p className="mt-1 text-sm text-slate-300">{ricordo.torneo} · {ricordo.data}</p>
+                    <p className="mt-5 text-lg font-bold text-[#fff1cb]">{ricordo.squadraCasa} {ricordo.golCasa} – {ricordo.golOspite} {ricordo.squadraOspite}</p>
+                    {ricordo.rigori && <p className="mt-1 text-xs text-slate-300">Rigori: {ricordo.rigori}</p>}
+                    <span className="mt-5 inline-block text-[10px] font-black uppercase tracking-[.16em] text-[#ead29a]">Rivivi la finale ↗</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {ricordiDelGiorno.length > 0 && (
+          <section className="mb-12 mt-8 overflow-hidden rounded-[26px] border border-[#d9bd7b]/25 bg-gradient-to-r from-[#1d2d49] to-[#0c1629] p-6 md:p-9" aria-label="Pazzi Memories: accadde oggi">
+            <p className="text-[9px] font-black uppercase tracking-[.28em] text-[#ead29a]">✦ Pazzi Memories · Accadde oggi</p>
+            <h2 className="mt-3 text-2xl font-black md:text-3xl">In questo giorno, nella nostra storia.</h2>
+            <p className="mt-2 text-sm text-slate-300">Partite disputate proprio oggi, negli anni passati.</p>
+            <div className="mt-6 grid gap-4 lg:grid-cols-2">
+              {ricordiDelGiorno.map((ricordo) => (
+                <div key={ricordo.id} className="rounded-2xl border border-[#ead29a]/20 bg-black/20 p-5 md:p-6">
+                  <p className="text-[10px] font-black uppercase tracking-[.2em] text-[#ead29a]">
+                    {ricordo.anniFa} {ricordo.anniFa === 1 ? "anno fa" : "anni fa"} · {ricordo.fase}
+                  </p>
+                  <h3 className="mt-3 text-xl font-black text-white">{ricordo.squadraCasa} {ricordo.golCasa} – {ricordo.golOspite} {ricordo.squadraOspite}</h3>
+                  <p className="mt-2 text-sm text-slate-300">{ricordo.torneo} · {ricordo.data}</p>
+                  {ricordo.rigori && <p className="mt-1 text-xs text-slate-300">Rigori: {ricordo.rigori}</p>}
+                  <Link href={`/tornei/${ricordo.torneoId}/partite/${ricordo.id}`} className="mt-5 inline-flex items-center rounded-full border border-[#ead29a]/45 px-5 py-3 text-[10px] font-black uppercase tracking-[.15em] text-[#ead29a] transition hover:bg-[#ead29a]/10">Rivivi la partita ↗</Link>
+                </div>
+              ))}
+            </div>
+          </section>
         )}
 
         {/* =================================================
