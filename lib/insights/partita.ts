@@ -151,127 +151,134 @@ export async function getPazziInsightsPartita(
     return [];
   }
 
-  // PREPARTITA: una sola partita riceve ogni traguardo previsto.
-  // Le partite future già inserite occupano una posizione nella sequenza;
-  // le partite concluse valgono come incontri realmente disputati.
+  // PREPARTITA — curiosità storiche anche senza data o ora.
+  // I risultati e le serie considerano esclusivamente partite concluse.
   if (!partita.Completata) {
-    type PartitaCalendario = {
-      id: bigint;
-      dataPartita: Date | null;
-      OraPartita: Date | null;
-      Completata: boolean | null;
-      TorneoId: number;
-      SquadraCasaId: number | null;
-      SquadraOspiteId: number | null;
-      sostitutoCasaId: number | null;
-      sostitutoOspiteId: number | null;
-    };
-
-    // Senza data non è possibile garantire a quale giornata
-    // appartenga un traguardo futuro: evitiamo annunci ambigui.
-    if (!partita.dataPartita) return [];
-
-    const calendario: PartitaCalendario[] = await prisma.partita.findMany({
-      where: {
-        SquadraCasaId: { not: null },
-        SquadraOspiteId: { not: null },
-        OR: [
-          { Completata: false },
-          { Completata: null },
-          { Completata: true, GolCasa: { not: null }, GolOspite: { not: null } },
-        ],
-      },
-      select: {
-        id: true,
-        dataPartita: true,
-        OraPartita: true,
-        Completata: true,
-        TorneoId: true,
-        SquadraCasaId: true,
-        SquadraOspiteId: true,
-        sostitutoCasaId: true,
-        sostitutoOspiteId: true,
-      },
-    });
-
-    // Stessa regola cronologica del modulo serie.ts: data, ora
-    // (quando entrambe presenti), poi ID. Per le date mancanti
-    // non assegniamo arbitrariamente un traguardo futuro.
-    const ordinati = calendario
-      .filter((p) => p.dataPartita !== null)
-      .sort((a, b) =>
-        confrontaPartite(
-          { id: a.id.toString(), dataPartita: a.dataPartita, oraPartita: a.OraPartita } as PartitaSerie,
-          { id: b.id.toString(), dataPartita: b.dataPartita, oraPartita: b.OraPartita } as PartitaSerie,
-        ),
-      );
-    const indice = ordinati.findIndex((p) => p.id === id);
-    if (indice < 0) return [];
-
-    const prima = ordinati.slice(0, indice);
     const insights: PazziInsight[] = [];
-    const squadre = [partita.squadraCasa, partita.squadraOspite].filter(
-      (s): s is NonNullable<typeof s> => s !== null,
+    const storico = await getSerieGlobali();
+    const entitaCasa = storico.squadre.find(
+      (s) => s.id === partita.SquadraCasaId,
+    );
+    const entitaOspite = storico.squadre.find(
+      (s) => s.id === partita.SquadraOspiteId,
     );
 
-    for (const squadra of squadre) {
-      const precedenti = prima.filter(
-        (p) => p.SquadraCasaId === squadra.id || p.SquadraOspiteId === squadra.id,
+    // Le partite prive di data non possono essere ordinate in modo
+    // affidabile: presentiamo soltanto fatti già verificati.
+    for (const squadra of [entitaCasa, entitaOspite]) {
+      if (!squadra) continue;
+      const eventi = squadra.eventi.filter(
+        (e) => e.partita.id !== id.toString(),
       );
-      const numero = precedenti.length + 1;
-      if (!TRAGUARDI.has(numero)) continue;
-      const inAttesa = precedenti.filter((p) => !p.Completata).length;
-      insights.push({
-        id: `pre-squadra-${squadra.id}-${numero}`,
-        tipo: "TRAGUARDO",
-        titolo: `Traguardo in arrivo: ${numero} partite`,
-        descrizione: `${squadra.nome} si prepara a disputare la sua ${numero}ª partita su PazziTournament.${inAttesa ? ` Il conteggio è previsto dal calendario e dipende da ${inAttesa} ${inAttesa === 1 ? "incontro precedente ancora da disputare" : "incontri precedenti ancora da disputare"}.` : ""}`,
-        icona: "trofeo",
-        priorita: 100,
-      });
-    }
-
-    // Allenatori: titolare per torneo/squadra, sostituto prioritario.
-    const partecipazioni = await prisma.partecipazione.findMany({
-      where: { torneoId: { in: [...new Set(ordinati.map((p) => p.TorneoId))] } },
-      select: { torneoId: true, squadraId: true, partecipanteId: true },
-    });
-    const titolari = new Map(
-      partecipazioni.map((p) => [`${p.torneoId}:${p.squadraId}`, p.partecipanteId] as const),
-    );
-    function allenatore(p: PartitaCalendario, lato: "casa" | "ospite"): number | null {
-      const squadraId = lato === "casa" ? p.SquadraCasaId : p.SquadraOspiteId;
-      if (squadraId === null) return null;
-      return (lato === "casa" ? p.sostitutoCasaId : p.sostitutoOspiteId)
-        ?? titolari.get(`${p.TorneoId}:${squadraId}`) ?? null;
-    }
-    const allenatoriCorrenti = [...new Set([
-      allenatore(partita, "casa"),
-      allenatore(partita, "ospite"),
-    ].filter((x): x is number => x !== null))];
-    if (allenatoriCorrenti.length) {
-      const nomi = await prisma.partecipante.findMany({
-        where: { id: { in: allenatoriCorrenti } },
-        select: { id: true, nome: true },
-      });
-      for (const persona of nomi) {
-        const precedenti = prima.filter(
-          (p) => allenatore(p, "casa") === persona.id || allenatore(p, "ospite") === persona.id,
-        );
-        const numero = precedenti.length + 1;
-        if (!TRAGUARDI.has(numero)) continue;
-        const inAttesa = precedenti.filter((p) => !p.Completata).length;
+      const vittorie = eventi.filter((e) => e.esito === "V").length;
+      if (eventi.length > 0) {
         insights.push({
-          id: `pre-allenatore-${persona.id}-${numero}`,
-          tipo: "TRAGUARDO",
-          titolo: `Traguardo in arrivo: ${numero} partite`,
-          descrizione: `${persona.nome} si prepara alla sua ${numero}ª partita da allenatore su PazziTournament.${inAttesa ? ` Il conteggio dipende da ${inAttesa} ${inAttesa === 1 ? "incontro precedente ancora da disputare" : "incontri precedenti ancora da disputare"}.` : ""}`,
+          id: `pre-storico-squadra-${squadra.id}`,
+          tipo: "CURIOSITA",
+          titolo: `${eventi.length} partite nello storico`,
+          descrizione: `${squadra.nome} ha già disputato ${eventi.length} ${eventi.length === 1 ? "partita" : "partite"} su PazziTournament, ottenendo ${vittorie} ${vittorie === 1 ? "vittoria" : "vittorie"}.`,
           icona: "stella",
-          priorita: 105,
+          priorita: 55,
+        });
+      }
+      // Serie calcolate sugli incontri realmente disputati.
+      // La descrizione non deve far credere che la partita attuale sia già vinta.
+      const serie = calcolaSerie(eventi);
+      if (serie.vittorieAttuali >= 3) {
+        insights.push({
+          id: `pre-serie-vittorie-${squadra.id}`,
+          tipo: "CURIOSITA",
+          titolo: `${serie.vittorieAttuali} vittorie di fila`,
+          descrizione: `${squadra.nome} arriva a questa sfida con una serie di ${serie.vittorieAttuali} vittorie consecutive nelle partite registrate.`,
+          icona: "stella",
+          priorita: 80,
+        });
+      } else if (serie.imbattibilitaAttuale >= 3) {
+        insights.push({
+          id: `pre-serie-imbattibilita-${squadra.id}`,
+          tipo: "CURIOSITA",
+          titolo: `${serie.imbattibilitaAttuale} partite senza perdere`,
+          descrizione: `${squadra.nome} non perde da ${serie.imbattibilitaAttuale} partite concluse registrate.`,
+          icona: "stella",
+          priorita: 76,
         });
       }
     }
-    return insights.sort((a, b) => b.priorita - a.priorita || a.id.localeCompare(b.id));
+
+    if (entitaCasa && entitaOspite) {
+      const scontri = entitaCasa.eventi.filter(
+        (e) => e.avversaria.squadraId === entitaOspite.id,
+      );
+      const vittorieCasa = scontri.filter((e) => e.esito === "V").length;
+      const vittorieOspite = scontri.filter((e) => e.esito === "P").length;
+      const pareggi = scontri.length - vittorieCasa - vittorieOspite;
+      insights.push({
+        id: `pre-scontri-${id}`,
+        tipo: "STORIA",
+        titolo: scontri.length === 0 ? "Una sfida inedita" : `${scontri.length} precedenti tra le squadre`,
+        descrizione: scontri.length === 0
+          ? `Nello storico delle partite concluse non risultano precedenti tra ${entitaCasa.nome} e ${entitaOspite.nome}.`
+          : `Negli scontri diretti registrati: ${vittorieCasa} vittorie per ${entitaCasa.nome}, ${vittorieOspite} per ${entitaOspite.nome} e ${pareggi} pareggi.`,
+        icona: "sfida",
+        priorita: 88,
+      });
+    }
+
+    // Il sostituto, se presente, è l'allenatore effettivo della gara.
+    const partecipazioniCorrenti = await prisma.partecipazione.findMany({
+      where: {
+        torneoId: partita.TorneoId,
+        squadraId: { in: [partita.SquadraCasaId, partita.SquadraOspiteId] },
+      },
+      select: { squadraId: true, partecipanteId: true },
+    });
+    const titolarePerSquadra = new Map(
+      partecipazioniCorrenti.map((p) => [p.squadraId, p.partecipanteId] as const),
+    );
+    const idCasa = partita.sostitutoCasaId ?? titolarePerSquadra.get(partita.SquadraCasaId) ?? null;
+    const idOspite = partita.sostitutoOspiteId ?? titolarePerSquadra.get(partita.SquadraOspiteId) ?? null;
+    const allenatori = [...new Set([idCasa, idOspite].filter((x): x is number => x !== null))];
+
+    for (const allenatoreId of allenatori) {
+      const allenatore = storico.partecipanti.find((p) => p.id === allenatoreId);
+      if (!allenatore || allenatore.eventi.length === 0) continue;
+      const vittorie = allenatore.eventi.filter((e) => e.esito === "V").length;
+      insights.push({
+        id: `pre-allenatore-storico-${allenatore.id}`,
+        tipo: "CURIOSITA",
+        titolo: `${allenatore.eventi.length} partite da allenatore`,
+        descrizione: `${allenatore.nome} ha disputato ${allenatore.eventi.length} partite registrate su PazziTournament, con ${vittorie} ${vittorie === 1 ? "vittoria" : "vittorie"}.`,
+        icona: "stella",
+        priorita: 60,
+      });
+    }
+
+    if (idCasa !== null && idOspite !== null && idCasa !== idOspite) {
+      const coachCasa = storico.partecipanti.find((p) => p.id === idCasa);
+      const coachOspite = storico.partecipanti.find((p) => p.id === idOspite);
+      if (coachCasa && coachOspite) {
+        const duelli = coachCasa.eventi.filter((e) => {
+          const casaId = e.partita.casa.partecipanteId;
+          const ospiteId = e.partita.ospite.partecipanteId;
+          return (casaId === idCasa && ospiteId === idOspite) ||
+            (casaId === idOspite && ospiteId === idCasa);
+        });
+        insights.push({
+          id: `pre-rivalita-${idCasa}-${idOspite}`,
+          tipo: "STORIA",
+          titolo: duelli.length === 0 ? "Nasce una rivalità" : `${duelli.length} duelli tra allenatori`,
+          descrizione: duelli.length === 0
+            ? `Nello storico delle partite concluse non risultano sfide tra ${coachCasa.nome} e ${coachOspite.nome}.`
+            : `${coachCasa.nome} e ${coachOspite.nome} si sono già affrontati ${duelli.length} ${duelli.length === 1 ? "volta" : "volte"}, anche con squadre diverse.`,
+          icona: "sfida",
+          priorita: 84,
+        });
+      }
+    }
+
+    return insights.sort(
+      (a, b) => b.priorita - a.priorita || a.id.localeCompare(b.id),
+    );
   }
 
   if (partita.GolCasa === null || partita.GolOspite === null) return [];
