@@ -15,7 +15,7 @@ model Torneo {
   formula       String
   andataRitorno Boolean
   creatoIl      DateTime @default(now())
-  logo String?
+  logo          String?
 
   // Manteniamo questo campo per compatibilità
   // con i tornei già esistenti.
@@ -81,19 +81,43 @@ model Squadra {
 }
 
 model Partecipante {
-  id       Int      @id @default(autoincrement())
-  nome     String   @unique
-  creatoIl DateTime @default(now())
-  qrToken String? @unique
+  id                 Int                @id @default(autoincrement())
+  nome               String             @unique
+  creatoIl           DateTime           @default(now())
+  qrToken            String?            @unique
   sostituzioniCasa   Partita[]          @relation("Partita_SostitutoCasa")
   sostituzioniOspite Partita[]          @relation("Partita_SostitutoOspite")
   rankingAllenatore  RankingAllenatore?
 
   partecipazioni Partecipazione[]
-  trofeiVinti Trofeo[] @relation("Trofeo_PartecipanteVincitore")
+  trofeiVinti    Trofeo[]         @relation("Trofeo_PartecipanteVincitore")
 
   // Profilo utente associato.
   profilo Profilo?
+
+  // Storico delle visite riconosciute tramite accesso personale.
+  visiteSito VisitaSito[]
+}
+
+// =========================================================
+// MONITORAGGIO ACCESSI PAZZITOURNAMENT
+// =========================================================
+// Ogni riga rappresenta una visita distinta di un partecipante.
+// Il tempo attivo verra aggiornato dai segnali di attivita del sito.
+model VisitaSito {
+  id               String    @id @default(uuid()) @db.Uuid
+  partecipanteId   Int
+  iniziataIl       DateTime  @default(now())
+  ultimaAttivitaIl DateTime  @default(now())
+  terminataIl      DateTime?
+  secondiAttivi    Int       @default(0)
+  origine          String? // QR, LINK o SESSIONE; impostata dal server
+
+  partecipante Partecipante @relation(fields: [partecipanteId], references: [id], onDelete: Cascade)
+
+  @@index([partecipanteId, iniziataIl])
+  @@index([iniziataIl])
+  @@index([ultimaAttivitaIl])
 }
 
 model Partecipazione {
@@ -178,9 +202,9 @@ model CalciatoreTorneo {
   squadra    Squadra    @relation(fields: [squadraId], references: [id], onDelete: Cascade)
   torneo     Torneo     @relation(fields: [torneoId], references: [id], onDelete: Cascade)
 
-  cartelliniRossi CartellinoRosso[]
-  gol             Gol[]
-  trofeiVinti     Trofeo[] @relation("Trofeo_CalciatoreVincitore")
+  cartelliniRossi    CartellinoRosso[]
+  gol                Gol[]
+  trofeiVinti        Trofeo[]                    @relation("Trofeo_CalciatoreVincitore")
   trofeiVintiExAequo TrofeoCalciatoreVincitore[] @relation("TrofeoCalciatoreVincitore_CalciatoreTorneo")
 
   @@unique([calciatoreId, torneoId, squadraId])
@@ -227,19 +251,19 @@ model Profilo {
 }
 
 model Trofeo {
-  id                    Int        @id @default(autoincrement())
-  torneoId              Int
-  tipo                  TipoTrofeo
-  valore                Int?
-  nota                  String?
-  squadraVincitriceId   Int?
-  calciatoreVincitoreId Int?
+  id                      Int        @id @default(autoincrement())
+  torneoId                Int
+  tipo                    TipoTrofeo
+  valore                  Int?
+  nota                    String?
+  squadraVincitriceId     Int?
+  calciatoreVincitoreId   Int?
   partecipanteVincitoreId Int?
 
-  torneo              Torneo            @relation(fields: [torneoId], references: [id], onDelete: Cascade)
-  squadraVincitrice   Squadra?          @relation("Trofeo_SquadraVincitrice", fields: [squadraVincitriceId], references: [id], onDelete: SetNull)
-  calciatoreVincitore CalciatoreTorneo? @relation("Trofeo_CalciatoreVincitore", fields: [calciatoreVincitoreId], references: [id], onDelete: SetNull)
-  partecipanteVincitore Partecipante? @relation("Trofeo_PartecipanteVincitore", fields: [partecipanteVincitoreId], references: [id], onDelete: SetNull)
+  torneo                Torneo            @relation(fields: [torneoId], references: [id], onDelete: Cascade)
+  squadraVincitrice     Squadra?          @relation("Trofeo_SquadraVincitrice", fields: [squadraVincitriceId], references: [id], onDelete: SetNull)
+  calciatoreVincitore   CalciatoreTorneo? @relation("Trofeo_CalciatoreVincitore", fields: [calciatoreVincitoreId], references: [id], onDelete: SetNull)
+  partecipanteVincitore Partecipante?     @relation("Trofeo_PartecipanteVincitore", fields: [partecipanteVincitoreId], references: [id], onDelete: SetNull)
 
   calciatoriVincitori TrofeoCalciatoreVincitore[]
 
@@ -252,7 +276,7 @@ model TrofeoCalciatoreVincitore {
   trofeoId           Int
   calciatoreTorneoId Int
 
-  trofeo             Trofeo            @relation(fields: [trofeoId], references: [id], onDelete: Cascade)
+  trofeo           Trofeo           @relation(fields: [trofeoId], references: [id], onDelete: Cascade)
   calciatoreTorneo CalciatoreTorneo @relation("TrofeoCalciatoreVincitore_CalciatoreTorneo", fields: [calciatoreTorneoId], references: [id], onDelete: Cascade)
 
   @@unique([trofeoId, calciatoreTorneoId])
@@ -303,6 +327,7 @@ model StoricoRankingSquadra {
   @@unique([rankingSquadraId, partitaId])
   @@index([partitaId])
 }
+
 model RankingAllenatore {
   id             Int      @id @default(autoincrement())
   partecipanteId Int      @unique
@@ -316,16 +341,16 @@ model RankingAllenatore {
 }
 
 model StoricoRankingAllenatore {
-  id                Int      @id @default(autoincrement())
+  id                  Int      @id @default(autoincrement())
   rankingAllenatoreId Int
-  partitaId         BigInt
-  puntiPrima        Int
-  variazione        Int
-  puntiDopo         Int
-  ruolo             String
-  fase              String?
-  risultato         String
-  creatoIl          DateTime @default(now())
+  partitaId           BigInt
+  puntiPrima          Int
+  variazione          Int
+  puntiDopo           Int
+  ruolo               String
+  fase                String?
+  risultato           String
+  creatoIl            DateTime @default(now())
 
   rankingAllenatore RankingAllenatore @relation(fields: [rankingAllenatoreId], references: [id], onDelete: Cascade)
   partita           Partita           @relation(fields: [partitaId], references: [id], onDelete: Cascade)
@@ -333,7 +358,6 @@ model StoricoRankingAllenatore {
   @@unique([rankingAllenatoreId, partitaId, ruolo])
   @@index([partitaId])
 }
-
 
 model FotoTorneo {
   id         Int      @id @default(autoincrement())
@@ -346,7 +370,6 @@ model FotoTorneo {
 
   @@index([torneoId, creatoIl])
 }
-
 
 enum TipoTrofeo {
   VINCITORE_TORNEO

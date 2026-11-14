@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 import PazziTournamentAI from "@/components/PazziTournamentAI";
+import MonitoraggioAttivita from "@/components/MonitoraggioAttivita";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,6 +36,7 @@ export default function RootLayout({
         {children}
 
         <PazziTournamentAI />
+        <MonitoraggioAttivita />
       </body>
     </html>
   );
