@@ -2,6 +2,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { getSessioneQR } from "@/lib/sessione-qr";
+import { isAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import ScrollReveal from "@/components/ScrollReveal";
 
@@ -214,6 +215,7 @@ export default async function Home() {
     ? trofeiHome.find((t) => t.tipo.toLowerCase() === anniversarioHero.torneo.toLowerCase())?.immagine ?? null
     : null;
   const sessioneQR = await getSessioneQR();
+  const amministratore = await isAdmin();
 
   let partecipante: {
     nome: string;
@@ -399,6 +401,11 @@ export default async function Home() {
 
   return (
     <main className={`pt-home min-h-screen overflow-hidden ${anniversarioHero?.stemmaVincitore ? "pt-home-champions" : ""}`}>
+      {amministratore && (
+        <Link href="/admin" className="fixed right-4 top-4 z-[9999] rounded-full border border-amber-300/60 bg-[#101b35] px-5 py-3 text-sm font-black text-amber-200 shadow-2xl transition hover:bg-[#26395b] sm:right-8 sm:top-6">
+          👑 Pannello Admin
+        </Link>
+      )}
 
       <style>{`
         .pt-home {

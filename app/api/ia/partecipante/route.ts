@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { getSessioneQR } from "@/lib/sessione-qr";
+import { rispondiDomandaEntita } from "@/lib/statistiche/risposte-entita";
 
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
@@ -4379,14 +4380,8 @@ export async function POST(request: Request) {
 
 
     // Identità QR verificata sul server: stessa logica della homepage.
-    const cookieStore = await cookies();
-    const qrToken = cookieStore.get("pazzi_qr_token")?.value;
-    const partecipanteQR = qrToken && /^[a-f0-9]{64}$/i.test(qrToken)
-      ? await prisma.partecipante.findUnique({
-          where: { qrToken },
-          select: { id: true, nome: true },
-        })
-      : null;
+    const sessioneQR = await getSessioneQR();
+    const partecipanteQR = sessioneQR?.partecipante ?? null;
 
     // Risposta breve alle domande sull'identità, prima del motore statistico
     // e prima dell'instradamento delle domande globali.
@@ -4425,6 +4420,15 @@ export async function POST(request: Request) {
       ? await trovaPartecipanteNellaDomanda(prisma, domanda)
       : null;
 
+    // Statistiche di tornei, calciatori e singole squadre: prima del motore globale.
+    // Le richieste personali sugli allenatori mantengono il comportamento precedente.
+    if (domanda && !partecipanteEsplicito && !eDomandaPersonaleSpecifiche(domanda)) {
+      const risultatoEntita = await rispondiDomandaEntita(domanda, typeof body.contestoTorneoId === "number" ? body.contestoTorneoId : null);
+      if (risultatoEntita) {
+        return NextResponse.json({ ...risultatoEntita, autenticato: Boolean(user), amministratore, richiedeIdentita: false, tipo: "entita" });
+      }
+    }
+
     // Le domande globali restano globali, salvo quelle personali o
     // quelle che nominano espressamente un partecipante.
     if (
@@ -4447,13 +4451,7 @@ export async function POST(request: Request) {
     // identità conservata nella chat. Il client non può sovrascrivere
     // l'identità personale riconosciuta tramite QR.
     let partecipante = partecipanteEsplicito ?? partecipanteQR;
-    console.log("PAZZI IA - DIAGNOSTICA QR", {
-  cookiePresente: Boolean(qrToken),
-  cookieValido: Boolean(qrToken && /^[a-f0-9]{64}$/i.test(qrToken)),
-  partecipanteQR: partecipanteQR?.nome ?? null,
-  partecipanteEsplicito: partecipanteEsplicito?.nome ?? null,
-  partecipanteSelezionato: partecipante?.nome ?? null,
-});
+
 
     if (!partecipante && profiloSessione?.partecipanteId) {
       partecipante = await prisma.partecipante.findUnique({
@@ -4596,4 +4594,51 @@ export async function POST(request: Request) {
 
   }
 
+}
+
+// Identità verificata per il saluto iniziale della chat.
+export async function GET() {
+  try {
+    const sessioneQR = await getSessioneQR();
+    let partecipante = sessioneQR?.partecipante ?? null;
+
+    if (!partecipante) {
+      try {
+        const supabase = await createSupabaseServerClient();
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          const { prisma } = await import("@/lib/prisma");
+          const profilo = await prisma.profilo.findUnique({
+            where: { supabaseId: user.id },
+            select: { partecipanteId: true },
+          });
+          if (profilo?.partecipanteId) {
+            partecipante = await prisma.partecipante.findUnique({
+              where: { id: profilo.partecipanteId },
+              select: { id: true, nome: true },
+            });
+          }
+        }
+      } catch {
+        // L'assenza di login Supabase non impedisce l'uso pubblico della chat.
+      }
+    }
+
+    const ora = Number(new Intl.DateTimeFormat("it-IT", {
+      timeZone: "Europe/Rome", hour: "2-digit", hourCycle: "h23",
+    }).format(new Date()));
+    const saluto = ora < 12 ? "Buongiorno" : ora < 18 ? "Buon pomeriggio" : "Buonasera";
+    return NextResponse.json({
+      partecipante,
+      saluto: partecipante
+        ? `${saluto} ${partecipante.nome}, come posso esserti utile?`
+        : `${saluto}! Come posso esserti utile?`,
+    }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    console.error("Errore identità Pazzi IA:", error);
+    return NextResponse.json({
+      partecipante: null,
+      saluto: "Ciao! Come posso esserti utile?",
+    }, { headers: { "Cache-Control": "no-store" } });
+  }
 }

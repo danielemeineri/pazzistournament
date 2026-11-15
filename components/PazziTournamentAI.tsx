@@ -17,6 +17,7 @@ type RispostaAPI = {
   risposta?: string;
   errore?: string;
   partecipante?: Partecipante;
+  torneoId?: number;
 };
 
 const suggerimenti = [
@@ -39,6 +40,33 @@ export default function PazziTournamentAI() {
   const [domanda, setDomanda] = useState("");
   const [caricamento, setCaricamento] = useState(false);
   const [messaggi, setMessaggi] = useState<Messaggio[]>([]);
+  const [contestoTorneoId, setContestoTorneoId] = useState<number | null>(null);
+  const [saluto, setSaluto] = useState("Ciao! Come posso esserti utile?");
+  
+
+  async function apriChat() {
+    if (aperto) {
+      setAperto(false);
+      return;
+    }
+    setAperto(true);
+    try {
+      const risposta = await fetch("/api/ia/partecipante", {
+        method: "GET",
+        cache: "no-store",
+      });
+      if (!risposta.ok) return;
+      const dati = (await risposta.json()) as {
+        saluto?: string;
+        partecipante?: Partecipante | null;
+      };
+      if (dati.saluto) setSaluto(dati.saluto);
+
+    } catch {
+      // La chat resta disponibile anche senza identificazione personale.
+    }
+  }
+
 
   async function inviaDomanda(testoPersonalizzato?: string) {
     const testo = (testoPersonalizzato ?? domanda).trim();
@@ -69,6 +97,7 @@ export default function PazziTournamentAI() {
         },
         body: JSON.stringify({
           domanda: testo,
+          contestoTorneoId,
 
         }),
       });
@@ -96,6 +125,8 @@ export default function PazziTournamentAI() {
           "L'API non ha restituito una risposta."
         );
       }
+
+      if (typeof data.torneoId === "number") setContestoTorneoId(data.torneoId);
 
       const risposta: Messaggio = {
         id: Date.now() + 1,
@@ -198,7 +229,7 @@ export default function PazziTournamentAI() {
 
                     <div>
                       <p className="text-sm font-bold text-white">
-                        Ciao! 👋
+                        {saluto} 👋
                       </p>
 
                       <p className="mt-2 text-sm leading-6 text-slate-400">
@@ -326,7 +357,7 @@ export default function PazziTournamentAI() {
       {/* PULSANTE FLOTTANTE */}
       <button
         type="button"
-        onClick={() => setAperto((value) => !value)}
+        onClick={() => { void apriChat(); }}
         aria-label="Apri PazziTournament AI"
         aria-expanded={aperto}
         className="group fixed bottom-6 right-6 z-[9999] flex h-16 w-16 items-center justify-center rounded-full border border-green-300/30 bg-green-500 text-white shadow-2xl shadow-green-500/30 transition-all duration-300 hover:scale-110 hover:bg-green-400 hover:shadow-green-400/40 focus:outline-none focus:ring-4 focus:ring-green-500/20 active:scale-95"

@@ -6,7 +6,11 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
 
-// Genera un token casuale di 256 bit.
+// =====================================================
+// GENERAZIONE TOKEN QR
+// =====================================================
+
+// Genera un token crittograficamente sicuro di 256 bit.
 function generaTokenQr(): string {
   return randomBytes(32).toString("hex");
 }
@@ -30,16 +34,21 @@ export async function generaQrMancanti() {
   let generati = 0;
 
   for (const partecipante of partecipanti) {
-    await prisma.partecipante.update({
+    // Aggiorna soltanto se il QR è ancora mancante.
+    // In questo modo due richieste simultanee non
+    // sovrascrivono il token appena generato.
+
+    const risultato = await prisma.partecipante.updateMany({
       where: {
         id: partecipante.id,
+        qrToken: null,
       },
       data: {
         qrToken: generaTokenQr(),
       },
     });
 
-    generati++;
+    generati += risultato.count;
   }
 
   revalidatePath("/admin");
@@ -65,16 +74,45 @@ export async function rigeneraQrPartecipante(
     throw new Error("ID partecipante non valido.");
   }
 
-  await prisma.partecipante.update({
-    where: {
-      id: partecipanteId,
-    },
-    data: {
-      qrToken: generaTokenQr(),
-    },
+  const adesso = new Date();
+
+  // La rigenerazione del QR e la chiusura delle visite
+  // vengono eseguite nella stessa transazione.
+  //
+  // Se una delle operazioni fallisce, nessuna modifica
+  // viene confermata nel database.
+
+  await prisma.$transaction(async (tx) => {
+    // Sostituisce il vecchio token.
+    // Il vecchio QR non sarà più valido.
+
+    await tx.partecipante.update({
+      where: {
+        id: partecipanteId,
+      },
+      data: {
+        qrToken: generaTokenQr(),
+      },
+    });
+
+    // Chiude tutte le visite ancora aperte
+    // appartenenti al partecipante.
+
+    await tx.visitaSito.updateMany({
+      where: {
+        partecipanteId,
+        terminataIl: null,
+      },
+      data: {
+        terminataIl: adesso,
+      },
+    });
   });
 
+  // Aggiorna le pagine amministrative.
+
   revalidatePath("/admin");
+  revalidatePath("/admin/accessi");
 
   return {
     success: true,

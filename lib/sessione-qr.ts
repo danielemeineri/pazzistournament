@@ -1,4 +1,3 @@
-
 import "server-only";
 
 import { cookies } from "next/headers";
@@ -19,7 +18,7 @@ export async function getSessioneQR() {
     !token ||
     !/^[a-f0-9]{64}$/i.test(token) ||
     !visitaId ||
-    !/^[0-9a-f-]{36}$/i.test(visitaId)
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(visitaId)
   ) {
     return null;
   }
@@ -41,7 +40,7 @@ export async function getSessioneQR() {
     select: {
       id: true,
       partecipanteId: true,
-      ultimaInterazioneIl: true,
+      ultimaAttivitaIl: true,
       terminataIl: true,
     },
   });
@@ -54,14 +53,9 @@ export async function getSessioneQR() {
     return null;
   }
 
-  const inattivita =
-    Date.now() -
-    visita.ultimaInterazioneIl.getTime();
+  const inattivita = Date.now() - visita.ultimaAttivitaIl.getTime();
 
-  if (
-    inattivita < 0 ||
-    inattivita >= INATTIVITA_MASSIMA_MS
-  ) {
+  if (inattivita < 0 || inattivita >= INATTIVITA_MASSIMA_MS) {
     return null;
   }
 
