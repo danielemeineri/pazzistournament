@@ -4,16 +4,13 @@ import { getUtenteCorrente, isAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import QRCode from "qrcode";
+import CopiaLinkPersonale from "@/components/CopiaLinkPersonale";
 import {
   generaQrMancanti,
   rigeneraQrPartecipante,
 } from "./qr-actions";
 
 export const dynamic = "force-dynamic";
-
-// =====================================================
-// DOMINIO UFFICIALE PER I QR
-// =====================================================
 
 function getBaseUrlQr(): string {
   if (process.env.NODE_ENV !== "production") {
@@ -55,10 +52,6 @@ function getBaseUrlQr(): string {
   return url.origin;
 }
 
-// =====================================================
-// PAGINA AMMINISTRATORE
-// =====================================================
-
 export default async function AdminPage() {
   const utente = await getUtenteCorrente();
 
@@ -92,10 +85,6 @@ export default async function AdminPage() {
     );
   }
 
-  // ===================================================
-  // SERVER ACTIONS
-  // ===================================================
-
   async function generaQrMancantiAction(
     _formData: FormData
   ): Promise<void> {
@@ -113,15 +102,7 @@ export default async function AdminPage() {
     await rigeneraQrPartecipante(partecipanteId);
   }
 
-  // ===================================================
-  // DOMINIO QR
-  // ===================================================
-
   const baseUrl = getBaseUrlQr();
-
-  // ===================================================
-  // PARTECIPANTI
-  // ===================================================
 
   const partecipanti = await prisma.partecipante.findMany({
     orderBy: {
@@ -132,10 +113,6 @@ export default async function AdminPage() {
   const qrMancanti = partecipanti.filter(
     (partecipante) => !partecipante.qrToken
   ).length;
-
-  // ===================================================
-  // GENERAZIONE IMMAGINI QR
-  // ===================================================
 
   const partecipantiConQr = await Promise.all(
     partecipanti.map(async (partecipante) => {
@@ -167,15 +144,9 @@ export default async function AdminPage() {
     })
   );
 
-  // ===================================================
-  // INTERFACCIA AMMINISTRATORE
-  // ===================================================
-
   return (
     <main className="min-h-screen bg-slate-950 text-white p-4 sm:p-8">
       <div className="max-w-6xl mx-auto">
-
-        {/* INTESTAZIONE */}
 
         <div className="flex flex-wrap items-center justify-between gap-4 mb-7">
           <div>
@@ -200,8 +171,6 @@ export default async function AdminPage() {
           </Link>
         </div>
 
-        {/* MONITORAGGIO ACCESSI */}
-
         <Link
           href="/admin/accessi"
           className="group mb-10 flex flex-col gap-5 rounded-3xl border border-amber-400/40 bg-gradient-to-br from-[#233451] via-[#14233b] to-[#0a1326] p-6 sm:p-8 shadow-xl transition hover:border-amber-300 hover:shadow-amber-500/10 sm:flex-row sm:items-center sm:justify-between"
@@ -225,8 +194,6 @@ export default async function AdminPage() {
             Apri dashboard →
           </span>
         </Link>
-
-        {/* INFORMAZIONI ACCOUNT */}
 
         <div className="bg-slate-800 rounded-3xl p-8 mb-10">
           <h2 className="text-2xl font-bold mb-4">
@@ -257,8 +224,6 @@ export default async function AdminPage() {
           </div>
         </div>
 
-        {/* GESTIONE QR */}
-
         <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5 sm:p-8">
           <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
             <div>
@@ -287,8 +252,6 @@ export default async function AdminPage() {
               </form>
             )}
           </div>
-
-          {/* ELENCO PARTECIPANTI */}
 
           <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {partecipantiConQr.map((partecipante) => (
@@ -321,6 +284,11 @@ export default async function AdminPage() {
                     >
                       Scarica QR PNG
                     </a>
+
+                    {/* NUOVO: COPIA LINK PERSONALE */}
+                    <CopiaLinkPersonale
+                      url={partecipante.qrUrl}
+                    />
 
                     <form
                       action={rigeneraQrPartecipanteAction.bind(
