@@ -407,3 +407,19 @@ enum PeriodoPartita {
   PTS
   STS
 }
+
+// Visite anonime: separate dalle sessioni personali dei partecipanti.
+model VisitaEsterna {
+  id               String   @id @default(uuid()) @db.Uuid
+  visitatoreId     String   @db.Uuid
+  iniziataIl       DateTime @default(now())
+  ultimaAttivitaIl DateTime @default(now())
+  secondiAttivi    Int      @default(0)
+  richieste        Int      @default(1)
+  dispositivo      String
+  primoPercorso    String
+  ultimoPercorso   String
+
+  @@index([visitatoreId, iniziataIl])
+  @@index([iniziataIl])
+}

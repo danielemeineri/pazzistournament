@@ -5,6 +5,7 @@ import "./globals.css";
 
 import PazziTournamentAI from "@/components/PazziTournamentAI";
 import MonitoraggioAttivita from "@/components/MonitoraggioAttivita";
+import LogoutAmministratore from "@/components/LogoutAmministratore";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,8 +19,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "PazziTournament",
-  description:
-    "Statistiche, tornei, giocatori e storia di PazziTournament.",
+  description: "Statistiche, tornei, giocatori e storia di PazziTournament.",
 };
 
 export default function RootLayout({
@@ -33,8 +33,8 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <LogoutAmministratore />
         {children}
-
         <PazziTournamentAI />
         <MonitoraggioAttivita />
       </body>

@@ -1,6 +1,7 @@
 import "server-only";
 
 import Link from "next/link";
+import AccessiEsterniAdmin from "@/components/AccessiEsterniAdmin";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -132,6 +133,8 @@ export default async function PaginaAccessiAdmin() {
             </div>
           ))}
         </section>
+
+        <AccessiEsterniAdmin />
 
         <section className="space-y-4">
           <h2 className="text-2xl font-bold">Statistiche per partecipante</h2>
